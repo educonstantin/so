@@ -12,11 +12,5 @@ Aquí encontrarás todo lo necesario para la asignatura.
 
 .. note::
 
-   Este proyecto está bajo continua modificación.
+   El proyecto de la documentación está bajo constantes cambios!.
 --------
-
-.. toctree::
-
-   introduccion
-   memoria
-   procesos
