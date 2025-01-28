@@ -1,5 +1,8 @@
+Introducción
+============
+
 Conceptos básicos
-=================
+-----------------
 
 Cada sistema informático incluye un conjunto básico de programas
 denominado **sistema operativo**. El programa más importante del
@@ -49,7 +52,7 @@ otros sistemas operativos. Estas amplias consideraciones se refieren a
 prácticamente todos los sistemas similares a Unix.
 
 Sistemas multiusuario
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 
 Un sistema multiusuario es un ordenador capaz de ejecutar de forma
 concurrente e independiente varias aplicaciones pertenecientes a dos o
@@ -83,7 +86,7 @@ impuestos. Unix es un sistema multiusuario que impone la protección de
 hardware de los recursos del sistema.
 
 Usuarios y Grupos
------------------
+~~~~~~~~~~~~~~~~~
 
 En un sistema multiusuario, cada usuario tiene un espacio privado en la
 máquina; por lo general, posee una cuota de espacio en disco para
@@ -120,7 +123,7 @@ puede acceder a todos los archivos del sistema y puede manipular todos
 los programas de usuario en ejecución.
 
 Procesos
---------
+~~~~~~~~
 
 Todos los sistemas operativos utilizan una abstracción fundamental: el
 **proceso**. Un proceso puede definirse como “una instancia de un
@@ -185,7 +188,7 @@ hardware a volver al modo usuario y el proceso continúa su ejecución
 desde la instrucción que sigue a la llamada del sistema.
 
 Arquitectura del núcleo
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 
 Como se mencionó anteriormente, la mayoría de los núcleos de Unix son
 monolíticos: cada capa del núcleo está integrada en el programa del
@@ -261,14 +264,14 @@ requiere el paso explícito de mensajes cuando se invocan las funciones
 del módulo.
 
 Una visión general del sistema de archivos Unix
-===============================================
+-----------------------------------------------
 
 El diseño del sistema operativo Unix se centra en su sistema de
 archivos, que tiene varias características interesantes. Revisaremos los
 más significativos, ya que se mencionarán con bastante frecuencia.
 
 Archivos
---------
+~~~~~~~~
 
 Un archivo Unix es un contenedor de información estructurado como una
 secuencia de bytes; el núcleo no interpreta el contenido de un archivo.
@@ -312,7 +315,7 @@ respectivamente. Si el directorio de trabajo actual es el directorio
 raíz, “.” y “..” coinciden.
 
 Enlaces duros y blandos
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 
 Un nombre de archivo incluido en un directorio se denomina enlace duro
 de archivo, o más simplemente, un enlace. Un mismo archivo puede tener
@@ -357,7 +360,7 @@ de p1. De esta forma, cada referencia a p2 puede traducirse
 automáticamente en una referencia a p1.
 
 Tipos de archivo
-----------------
+~~~~~~~~~~~~~~~~
 
 Los archivos Unix pueden tener uno de los siguientes tipos:
 
@@ -382,7 +385,7 @@ Los pipes y sockets son archivos especiales que se utilizan para la
 comunicación entre procesos.
 
 Descriptor de archivo e inodo
------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Unix hace una distinción clara entre el contenido de un archivo y la
 información sobre un archivo. Con la excepción de los archivos de
@@ -416,7 +419,7 @@ en el estándar POSIX:
 -  Derechos de acceso y modo de archivo
 
 Derechos de acceso y modo de archivo
-------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Los usuarios potenciales de un archivo se dividen en tres clases:
 
@@ -461,7 +464,7 @@ directorio principal, según el valor del indicador sgid del directorio
 principal.
 
 Llamadas al sistema de manejo de archivos
------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Cuando un usuario accede al contenido de un archivo normal o de un
 directorio, en realidad accede a algunos datos almacenados en un
@@ -483,7 +486,7 @@ principales llamadas al sistema de manejo de archivos; estos se
 describen a continuación.
 
 Abriendo un archivo
-~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^
 
 Los procesos solo pueden acceder a archivos “abiertos”. Para abrir un
 archivo, el proceso invoca la llamada al sistema:
@@ -540,7 +543,7 @@ por la semántica POSIX.
    partes de él.
 
 Acceso a un archivo abierto
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Los archivos regulares de Unix se pueden abordar de forma secuencial o
 aleatoria, mientras que los archivos de dispositivos y las
@@ -607,7 +610,7 @@ leídos. El puntero del archivo también se actualiza agregando nread a su
 valor anterior. Los parámetros write() son similares.
 
 Cerrar un archivo
-~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^
 
 Cuando un proceso ya no necesita acceder al contenido de un archivo,
 puede invocar la llamada al sistema:
@@ -619,7 +622,7 @@ archivo fd. Cuando termina un proceso, el núcleo cierra todos los
 archivos abiertos restantes.
 
 Cambiar el nombre y eliminar un archivo
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Para cambiar el nombre o eliminar un archivo, no es necesario que un
 proceso lo abra. De hecho, tales operaciones no actúan sobre el
@@ -638,7 +641,7 @@ directorio correspondiente. El archivo se elimina solo cuando el
 recuento de enlaces asume el valor 0.
 
 Una descripción general de los núcleos de Unix
-==============================================
+----------------------------------------------
 
 Los núcleos de Unix proporcionan un entorno de ejecución en el que se
 pueden ejecutar las aplicaciones. Por lo tanto, el kernel debe
@@ -647,7 +650,7 @@ aplicaciones usan esas interfaces y normalmente no interactúan
 directamente con los recursos de hardware.
 
 El modelo de proceso/núcleo
----------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Como ya se mencionó, una CPU puede ejecutarse en modo usuario o en modo
 núcleo. De hecho, algunas CPU pueden tener más de dos estados de
@@ -723,7 +726,7 @@ hecho, las rutinas del núcleo se pueden activar de varias formas:
    kernel.
 
 Implementación de procesos
---------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Para permitir que el núcleo administre procesos, cada proceso se
 representa mediante un *descriptor de proceso* que incluye información
@@ -754,7 +757,7 @@ cada cola (posiblemente vacía) corresponde al conjunto de procesos que
 esperan un evento específico.
 
 Kernels reentrantes
--------------------
+~~~~~~~~~~~~~~~~~~~
 
 Todos los kernels de Unix son *reentrantes*. Esto significa que varios
 procesos pueden estar ejecutándose en Modo Kernel al mismo tiempo. Por
@@ -840,7 +843,7 @@ diferentes:
 .. image:: data:image/png;base64,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
 
 Espacio de direcciones de proceso
----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Cada proceso se ejecuta en su espacio de direcciones privado. Un proceso
 que se ejecuta en modo de usuario se refiere a áreas privadas de pila,
@@ -880,7 +883,7 @@ compartido por varios procesos, su asignación de memoria se incluye en
 el espacio de direcciones de cada uno de los procesos que lo comparten.
 
 Sincronización y regiones críticas
-----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 La implementación de un kernel reentrante requiere el uso de
 sincronización. Si un hilo de control del kernel se suspende mientras
@@ -922,7 +925,7 @@ adoptado varias técnicas de sincronización. La siguiente sección se
 concentra en cómo sincronizar los hilos de control del kernel.
 
 Inhabilitación de la apropiatividad del kernel
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Para proporcionar una solución radicalmente simple a los problemas de
 sincronización, algunos kernels Unix tradicionales no son apropiativos:
@@ -949,7 +952,7 @@ porque dos hilos de control del kernel que se ejecutan en diferentes CPU
 pueden acceder simultáneamente a la misma estructura de datos.
 
 Inhabilitación de interrupciones
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Otro mecanismo de sincronización para sistemas monoprocesador consiste
 en deshabilitar todas las interrupciones de hardware antes de ingresar a
@@ -964,7 +967,7 @@ en la CPU local no es suficiente y se deben usar otras técnicas de
 sincronización.
 
 Semáforos
-~~~~~~~~~
+^^^^^^^^^
 
 Un mecanismo ampliamente utilizado, eficaz tanto en sistemas
 monoprocesador como multiprocesador, se basa en el uso de semáforos. Un
@@ -993,7 +996,7 @@ Cuando otro proceso ejecuta el método up() en ese semáforo, uno de los
 procesos en la lista del semáforo puede continuar.
 
 Spin locks
-~~~~~~~~~~
+^^^^^^^^^^
 
 En los sistemas multiprocesador, los semáforos no siempre son la mejor
 solución a los problemas de sincronización. Algunas estructuras de datos
@@ -1021,7 +1024,7 @@ protegida no tendría la oportunidad de continuar con la ejecución y
 liberar el spinlock. El resultado final sería que el sistema se cuelga.
 
 Evitando bloqueos mutuos
-~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Los procesos o los hilos de control del kernel que se sincronizan con
 otros hilos de control pueden entrar fácilmente en un estado de *bloqueo
@@ -1042,7 +1045,7 @@ sistemas operativos, incluido Linux, evitan este problema solicitando
 bloqueos en un orden predefinido.
 
 Señales y comunicación entre procesos (IPC)
--------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Las *señales* de Unix proporcionan un mecanismo para notificar a los
 procesos de eventos del sistema. Cada evento tiene su propio número de
@@ -1123,7 +1126,7 @@ implementación de la memoria compartida depende de cómo el núcleo
 implemente los espacios de direcciones de proceso.
 
 Administración de procesos
---------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Unix hace una clara distinción entre el proceso y el programa que está
 ejecutando. Con ese fin, las llamadas al sistema fork() y \_exit() se
@@ -1153,7 +1156,7 @@ enviando al proceso principal una señal SIGCHLD, que se ignora de manera
 predeterminada.
 
 Procesos zombies
-~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^
 
 ¿Cómo puede un proceso padre consultar sobre la finalización de sus
 procesos hijos? La llamada al sistema wait4() permite que un proceso
@@ -1194,7 +1197,7 @@ todos sus hijos y rutinariamente emite llamadas al sistema wait4(), cuyo
 efecto secundario es deshacerse de todos los zombis huérfanos.
 
 Grupos de procesos y sesiones de inicio de sesión
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Los sistemas operativos Unix modernos introducen la noción de grupos de
 procesos para representar una abstracción de “trabajo”. Por ejemplo,
@@ -1226,14 +1229,14 @@ colocar un grupo de procesos en segundo o en primer plano
 respectivamente.
 
 Gestión de la memoria
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 
 La gestión de la memoria es, por lejos, la actividad más compleja de un
 kernel de Unix. Esta sección ilustra algunos de los principales
 problemas relacionados con la gestión de la memoria.
 
 Memoria virtual
-~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^
 
 Todos los sistemas Unix recientes proporcionan una abstracción útil
 llamada memoria virtual. La memoria virtual actúa como una capa lógica
@@ -1274,7 +1277,7 @@ contiguas se puede satisfacer asignando un grupo de marcos de página que
 tienen direcciones físicas no contiguas.
 
 Uso de la memoria de acceso aleatorio
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Todos los sistemas operativos Unix distinguen claramente entre dos
 partes de la memoria de acceso aleatorio (RAM). Unos pocos megabytes se
@@ -1309,7 +1312,7 @@ solicitud de memoria podría fallar incluso si hay suficiente memoria
 disponible, pero no está disponible como un fragmento contiguo.
 
 Asignador de memoria del kernel
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 El *asignador de memoria del kernel* (KMA) es un subsistema que intenta
 satisfacer las solicitudes de áreas de memoria de todas las partes del
@@ -1342,7 +1345,7 @@ Como veremos, el KMA de Linux utiliza un asignador Slab encima de un
 sistema de amigos.
 
 Manejo del espacio de direcciones virtuales del proceso
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 El espacio de direcciones de un proceso contiene todas las direcciones
 de memoria virtual a las que el proceso puede hacer referencia. El
@@ -1386,7 +1389,7 @@ página. El controlador de excepciones asigna un nuevo marco de página al
 proceso afectado y lo inicializa con el contenido de la página original.
 
 Almacenamiento en caché
-~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^
 
 Buena parte de la memoria física disponible se utiliza como caché para
 discos duros y otros dispositivos de bloque. Esto se debe a que los
@@ -1413,7 +1416,7 @@ tienen cuidado de volver a escribir periódicamente los búferes sucios en
 el disco.
 
 Controladores de dispositivos
------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 El kernel interactúa con los dispositivos de E/S por medio de
 controladores de dispositivos. Los controladores de dispositivos están
