@@ -1,5 +1,5 @@
-Bienvenido a la documentación de la asignatura Sistemas Operativos!
-==================================================================
+Bienvenidos a la asignatura Sistemas Operativos!
+===============================================
 
 
 Aquí encontrarás todo lo necesario para la asignatura.
