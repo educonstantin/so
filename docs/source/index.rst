@@ -14,3 +14,9 @@ Aquí encontrarás todo lo necesario para la asignatura.
 
    El proyecto de la documentación está bajo constantes cambios!.
 --------
+
+.. toctree::
+
+   introduccion
+   memoria
+   procesos
