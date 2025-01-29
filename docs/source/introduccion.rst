@@ -90,7 +90,9 @@ El diseño del sistema operativo Unix se centra en su sistema de archivos, que t
 Archivos
 ++++++++
 
-Un archivo Unix es un contenedor de información estructurado como una secuencia de bytes; el núcleo no interpreta el contenido de un archivo. Muchas bibliotecas de programación implementan abstracciones de nivel superior, como registros estructurados en campos y direccionamiento de registros basado en claves. Sin embargo, los programas en estas bibliotecas deben confiar en las llamadas al sistema que ofrece el núcleo. Desde el punto de vista del usuario, los archivos se organizan en un espacio de nombres estructurado en árbol, como se muestra en la figura.
+Un archivo Unix es un contenedor de información estructurado como una secuencia de bytes; el núcleo no interpreta el contenido de un archivo. Muchas bibliotecas de programación implementan abstracciones de nivel superior, como registros estructurados en campos y direccionamiento de registros basado en claves. Sin embargo, los programas en estas bibliotecas deben confiar en las llamadas al sistema que ofrece el núcleo. Desde el punto de vista del usuario, los archivos se organizan en un espacio de nombres estructurado en árbol, como se muestra en la siguiente figura_.
+
+..  _figura:
 
 ..  figure:: ../images/introduccion_arbol.png
     :align: center
