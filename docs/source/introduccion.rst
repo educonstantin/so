@@ -64,8 +64,6 @@ Aunque la investigación académica sobre sistemas operativos está orientada ha
 
 Para lograr muchas de las ventajas teóricas de los microkernels sin introducir penalizaciones de rendimiento, el kernel de Linux ofrece *módulos*. Un módulo es un archivo objeto cuyo código puede ser vinculado al kernel (y desvinculado del mismo) en tiempo de ejecución. El código objeto generalmente consiste en un conjunto de funciones que implementan un sistema de archivos, un controlador de dispositivo u otras características en la capa superior del kernel. El módulo, a diferencia de las capas externas de los sistemas operativos con microkernel, no se ejecuta como un proceso específico. En cambio, se ejecuta en modo kernel en nombre del proceso actual, como cualquier otra función del kernel vinculada estáticamente.
 
-..  image:: ../images/imagen1.png
-
 Las principales ventajas de utilizar módulos incluyen:
 
 *Un enfoque modularizado*
@@ -83,6 +81,26 @@ Las principales ventajas de utilizar módulos incluyen:
 *Sin penalización de rendimiento*
 
     Una vez vinculado, el código objeto de un módulo es equivalente al código objeto del kernel vinculado estáticamente. Por lo tanto, no se requiere el paso explícito de mensajes cuando se invocan las funciones del módulo. [#]_
+
+Un resumen del Sistema de Archivos
+----------------------------------
+
+El diseño del sistema operativo Unix se centra en su sistema de archivos, que tiene varias características interesantes. Revisaremos las más significativas, ya que se mencionarán con bastante frecuencia de aquí en adelante.
+
+Archivos
+++++++++
+
+Un archivo Unix es un contenedor de información estructurado como una secuencia de bytes; el núcleo no interpreta el contenido de un archivo. Muchas bibliotecas de programación implementan abstracciones de nivel superior, como registros estructurados en campos y direccionamiento de registros basado en claves. Sin embargo, los programas en estas bibliotecas deben confiar en las llamadas al sistema que ofrece el núcleo. Desde el punto de vista del usuario, los archivos se organizan en un espacio de nombres estructurado en árbol, como se muestra en la figura.
+
+..  figure:: ../images/introduccion_arbol.png
+    :align: center
+    :scale: 10 %
+    :alt: Árbol de directorios
+
+    Árbol de directorios
+
+Todos los nodos del árbol, excepto las hojas, denotan nombres de directorio. Un nodo de directorio contiene información sobre los archivos y directorios que se encuentran justo debajo de él. Un nombre de archivo o directorio consiste en una secuencia de caracteres ASCII arbitrarios,* con la excepción de / y del carácter nulo \0. La mayoría de los sistemas de archivos establecen un límite en la longitud de un nombre de archivo, normalmente no más de 255 caracteres. El directorio correspondiente a la raíz del árbol se denomina directorio raíz. Por convención, su nombre es una barra (/). Los nombres deben ser diferentes dentro del mismo directorio, pero se puede usar el mismo nombre en directorios diferentes. Unix asocia un directorio de trabajo actual con cada proceso (vea la sección “El modelo de proceso/núcleo” más adelante en este capítulo); pertenece al contexto de ejecución del proceso e identifica el directorio que el proceso usa actualmente. Para identificar un archivo específico, el proceso usa una ruta de acceso, que consiste en barras que se alternan con una secuencia de nombres de directorio que conducen al archivo. Si el primer elemento de la ruta de acceso es una barra, se dice que la ruta de acceso es absoluta, porque su punto de inicio es el directorio raíz. De lo contrario, si el primer elemento es un nombre de directorio o de archivo, se dice que la ruta de acceso es relativa, porque su punto de inicio es el directorio actual del proceso. Al especificar nombres de archivo, también se usan las notaciones “.” y “..” que denotan el directorio de trabajo actual y su directorio padre, respectivamente. Si el directorio de trabajo actual es el directorio raíz, “.” y “..” coinciden.
+
 
 ..  [#] Algunos sistemas operativos multiprocesamiento no son multiusuarios.
 ..  [#] Se produce una pequeña pérdida de rendimiento cuando se vincula y desvincula el módulo. Sin embargo, esta pérdida se puede comparar con la pérdida causada por la creación y eliminación de procesos del sistema en sistemas operativos con microkernel.
