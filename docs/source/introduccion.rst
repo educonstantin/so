@@ -64,6 +64,8 @@ Aunque la investigación académica sobre sistemas operativos está orientada ha
 
 Para lograr muchas de las ventajas teóricas de los microkernels sin introducir penalizaciones de rendimiento, el kernel de Linux ofrece *módulos*. Un módulo es un archivo objeto cuyo código puede ser vinculado al kernel (y desvinculado del mismo) en tiempo de ejecución. El código objeto generalmente consiste en un conjunto de funciones que implementan un sistema de archivos, un controlador de dispositivo u otras características en la capa superior del kernel. El módulo, a diferencia de las capas externas de los sistemas operativos con microkernel, no se ejecuta como un proceso específico. En cambio, se ejecuta en modo kernel en nombre del proceso actual, como cualquier otra función del kernel vinculada estáticamente.
 
+..  image: imagen1.png
+
 Las principales ventajas de utilizar módulos incluyen:
 
 *Un enfoque modularizado*
