@@ -1,5 +1,5 @@
-Bienvenidos a la asignatura Sistemas Operativos!
-===============================================
+Bienvenidos!
+===========
 
 Corresponde a los apuntes de la cátedra Sistemas Operativos de la carrera de
 Ingeniería en Computación dictada en la Facultad de Ingeniería en la 
