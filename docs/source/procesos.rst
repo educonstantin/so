@@ -211,31 +211,92 @@ La siguiente figura ilustra las relaciones padre/hijo de un grupo de procesos. E
 La tabla pidhash y las listas encadenadas
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+En varias circunstancias, el núcleo debe ser capaz de derivar el puntero del descriptor de proceso correspondiente a un PID. Esto ocurre, por ejemplo, al dar servicio a la llamada del sistema kill(). Cuando el proceso P1 desea enviar una señal a otro proceso, P2, invoca la llamada del sistema kill() especificando el PID de P2 como parámetro. El núcleo deriva el puntero del descriptor de proceso del PID y luego extrae el puntero a la estructura de datos que registra las señales pendientes del descriptor de proceso de P2.
 
-..  slide:: System Calls as Kernel services
-    :inline-contents: True
-    :level: 2
+Es posible escanear la lista de procesos secuencialmente y verificar los campos pid de los descriptores de proceso, pero es bastante ineficiente. Para acelerar la búsqueda, se han introducido cuatro tablas hash. ¿Por qué múltiples tablas hash? Simplemente porque el descriptor de proceso incluye campos que representan diferentes tipos de PID, y cada tipo de PID requiere su propia tabla hash.
 
-    |_|
+Como explica cada curso básico de informática, una función hash no siempre asegura una correspondencia uno a uno entre los PID y los índices de tabla. Se dice que dos PID diferentes que hacen hash en el mismo índice de tabla están en *colisión*.
 
-    .. ditaa::
+Linux utiliza el *encadenamiento* para manejar PIDs en colisión; cada entrada de la tabla es la cabecera de una lista doblemente enlazada de descriptores de procesos en colisión. La figura ilustra una tabla hash de PID con dos listas. Los procesos que tienen PIDs 2.890 y 29.384 hacen hash en el elemento 200 de la tabla, mientras que el proceso que tiene PID 29.385 hace hash en el elemento 1.466 de la tabla.
 
-           +-------------+           +-------------+
-           | Application |  	     | Application |
-           +-------------+           +-------------+
-             |                           |
-             |read(fd, buff, len)        |fork()
-             |                           |
-             v                           v
-           +---------------------------------------+
-           |               Kernel                  |
-           +---------------------------------------+
+El hash con encadenamiento es preferible a una transformación lineal de PIDs a índices de tabla porque en cualquier instancia dada, el número de procesos en el sistema es usualmente muy inferior a 32.768 (el número máximo de PIDs permitidos). Sería un desperdicio de almacenamiento definir una tabla que consista en 32.768 entradas, si, en cualquier instancia dada, la mayoría de dichas entradas no se utilizan.
 
+..  figure:: ../images/tabla-hash-pid-listas-encadenadas.png
+    :align: center
+    :alt: Una tabla hash PID simple y listas encadenadas
 
+    Una tabla hash PID simple y listas encadenadas
 
+Las estructuras de datos utilizadas en las tablas hash PID son bastante sofisticadas, porque deben mantener un registro de las relaciones entre los procesos. Como ejemplo, supongamos que el núcleo debe recuperar todos los procesos que pertenecen a un grupo de hilos determinado, es decir, todos los procesos cuyo campo tgid es igual a un número determinado. Al buscar en la tabla hash el número de grupo de hilos dado, se obtiene sólo un descriptor de proceso, es decir, el descriptor del líder del grupo de hilos. Para recuperar rápidamente los demás procesos del grupo, el núcleo debe mantener una lista de procesos para cada grupo de hilos. La misma situación surge cuando se buscan los procesos que pertenecen a una sesión de inicio de sesión determinada o que pertenecen a un grupo de procesos determinado.
 
+Las estructuras de datos de las tablas hash PID resuelven todos estos problemas, porque permiten la definición de una lista de procesos para cualquier número PID incluido en una tabla hash. La estructura de datos principal es una matriz de cuatro estructuras pid incrustadas en el campo pids del descriptor de proceso; los campos de la estructura pid se muestran en la tabla.
 
++-----------------------+-----------+---------------------------------------------------------------+
+| Tipo                  | Nombre    | Descripción                                                   |
++=======================+===========+===============================================================+
+| int                   | nr        | El número de PID                                              |
++-----------------------+-----------+---------------------------------------------------------------+
+| struct hlist_node     | pid_chain | Los enlaces a los elementos siguientes y anteriores en la     |
+|                       |           | lista de la cadena hash                                       |
++-----------------------+-----------+---------------------------------------------------------------+
+| struct list_head      | pid_list  | El encabezado de la lista por PID                             |
++-----------------------+-----------+---------------------------------------------------------------+
 
+La siguiente figura muestra un ejemplo basado en la tabla hash PIDTYPE_TGID (tabla de grupo de hilos). La segunda entrada de la matriz *pid_hash* almacena la dirección de la tabla hash, es decir, la matriz de estructuras *hlist_head* que representan las cabeceras de las listas de la cadena. En la lista de la cadena con raíz en la entrada 71 de la tabla hash, hay dos descriptores de proceso correspondientes a los números PID 246 y 4.351 (las líneas de doble flecha representan un par de punteros hacia delante y hacia atrás). Los números PID se almacenan en el campo *nr* de la estructura pid incrustada en el descriptor de proceso (por cierto, debido a que el número del grupo de hilos coincide con el PID de su líder, estos números también se almacenan en el campo pid de los descriptores de proceso).
+
+..  figure:: ../images/tablas-hash-pid.png
+    :align: center
+    :alt: Las tablas hash PID
+
+    Las tablas hash PID
+
+Consideremos la lista por PID del grupo de hilos 4.351: la cabecera de la lista se almacena en el campo *pid_list* del descriptor de proceso incluido en la tabla hash, mientras que los enlaces a los elementos siguiente y anterior de la lista por PID también se almacenan en el campo pid_list de cada elemento de la lista.
+
+Cómo se organizan los procesos
+******************************
+
+Las listas de colas de ejecución (*runqueue*) agrupan todos los procesos en un estado TASK_RUNNING. Cuando se trata de agrupar procesos en otros estados, los diversos estados requieren diferentes tipos de tratamiento, con Linux optando por una de las opciones que se muestran en la siguiente lista.
+
+- Los procesos en un estado TASK_STOPPED, EXIT_ZOMBIE o EXIT_DEAD no están vinculados en listas específicas. No hay necesidad de agrupar procesos en ninguno de estos tres estados, porque los procesos detenidos, zombis y muertos solo se acceden a través de PID o a través de listas vinculadas de los procesos secundarios para un padre en particular.
+- Los procesos en un estado TASK_INTERRUPTIBLE o TASK_UNINTERRUPTIBLE se subdividen en muchas clases, cada una de las cuales corresponde a un evento específico. En este caso, el estado del proceso no proporciona suficiente información para recuperar el proceso rápidamente, por lo que es necesario introducir listas adicionales de procesos. Estas se denominan *colas de espera* (*wait queues*) y se analizan a continuación.
+
+Colas de espera (wait queues)
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+Las colas de espera tienen varios usos en el núcleo, particularmente para el manejo de interrupciones, la sincronización de procesos y el cronometraje. Debido a que estos temas se tratan en posteriormente, aquí solo diremos que un proceso a menudo debe esperar a que ocurra algún evento, como que finalice una operación de disco, se libere un recurso del sistema o transcurra un intervalo de tiempo fijo. Las colas de espera implementan esperas condicionales en eventos: un proceso que desea esperar un evento específico se coloca en la cola de espera adecuada y cede el control. Por lo tanto, una cola de espera representa un conjunto de procesos dormidos, que son despertados por el núcleo cuando alguna condición se vuelve verdadera.
+
+Las colas de espera se implementan como listas doblemente enlazadas cuyos elementos incluyen punteros a descriptores de procesos. Cada cola de espera se identifica por una *cabecera de cola de espera*, una estructura de datos de tipo *wait_queue_head_t*:
+
+..  code-block:: c
+
+    struct __wait_queue_head {
+            spinlock_t lock;
+            struct list_head task_list;
+    };
+    typedef struct __wait_queue_head wait_queue_head_t;
+
+Debido a que las colas de espera son modificadas por manejadores de interrupciones así como por funciones principales del núcleo, las listas doblemente enlazadas deben estar protegidas de accesos concurrentes, que podrían inducir resultados impredecibles. La sincronización se logra mediante el candado *lock* en la cabecera de la cola de espera. El campo *task_list* es la cabecera de la lista de procesos en espera.
+
+Los elementos de una lista de cola de espera son de tipo *wait_queue_t*:
+
+.. code-block:: c
+
+    struct __wait_queue {
+        unsigned int flags;
+        struct task_struct * task;
+        wait_queue_func_t func;
+        struct list_head task_list;
+    };
+    typedef struct __wait_queue wait_queue_t;
+
+Cada elemento en la lista de cola de espera representa un proceso inactivo, que está esperando que ocurra algún evento; su dirección de descriptor se almacena en el campo *task*. El campo *task_list* contiene los punteros que vinculan este elemento a la lista de procesos que esperan el mismo evento.
+
+Sin embargo, no siempre es conveniente despertar *todos* los procesos inactivos en una cola de espera. Por ejemplo, si dos o más procesos están esperando que se libere acceso exclusivo a algún recurso, tiene sentido despertar solo un proceso en la cola de espera. Este proceso toma el recurso, mientras que los otros procesos continúan durmiendo. (Esto evita un problema conocido como la “manada atronadora”, con la que múltiples procesos se despiertan solo para competir por un recurso al que puede acceder uno de ellos, con el resultado de que los procesos restantes deben volver a dormirse una vez más).
+
+Por lo tanto, hay dos tipos de procesos dormidos: los *procesos exclusivos* (indicados por el valor 1 en el campo *flags* del elemento de cola de espera correspondiente) son despertados selectivamente por el núcleo, mientras que los *procesos no exclusivos* (indicados por el valor 0 en el campo *flags*) siempre son despertados por el núcleo cuando ocurre el evento. Un proceso que espera un recurso que se puede otorgar a un solo proceso a la vez es un proceso exclusivo típico. Los procesos que esperan un evento que puede afectar a cualquiera de ellos son no exclusivos. Considere, por ejemplo, un grupo de procesos que están esperando la terminación de un grupo de transferencias de bloques de disco: tan pronto como se completan las transferencias, todos los procesos en espera deben ser despertados. Como veremos a continuación, el campo *func* de un elemento de la cola de espera se utiliza para especificar cómo deben despertarse los procesos que duermen en la cola de espera.
+
+Manejo de colas de espera
+>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
 
