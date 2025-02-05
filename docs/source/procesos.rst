@@ -109,7 +109,7 @@ El valor del esp disminuye tan pronto como se escriben datos en la pila. Debido 
 
 El lenguaje C permite que la estructura thread_info y la pila del núcleo de un proceso se representen convenientemente por medio de la siguiente instrucción union:
 
-..  code-block:: C
+..  code-block:: c
 
     union thread_union {
         struct thread_info thread_info;
@@ -123,7 +123,7 @@ Identificando el proceso actual (*current*)
 
 La estrecha asociación entre la estructura *thread_info* y la pila del modo kernel que acabamos de describir ofrece un beneficio clave en términos de eficiencia: el kernel puede obtener fácilmente la dirección de la estructura thread_info del proceso que se está ejecutando actualmente en una CPU a partir del valor del registro *esp*. De hecho, si la estructura *thread_union* tiene una longitud de 8 KB (2\ :sup:`13` bytes), el kernel enmascara los 13 bits menos significativos de *esp* para obtener la dirección base de la estructura *thread_info*; por otro lado, si la estructura *thread_union* tiene una longitud de 4 KB, el kernel enmascara los 12 bits menos significativos de *esp*. Esto se hace mediante la función *current_thread_info()*, que produce instrucciones en lenguaje ensamblador como las siguientes:
 
-..  code:: ASM
+..  code-block:: ASM
 
     movl $0xffffe000,%ecx /* or 0xfffff000 for 4KB stacks */
     andl %esp,%ecx
@@ -133,7 +133,7 @@ Después de ejecutar estas tres instrucciones, *p* contiene el puntero de la est
 
 Con mayor frecuencia, el kernel necesita la dirección del descriptor del proceso en lugar de la dirección de la estructura *thread_info*. Para obtener el puntero del descriptor de proceso del proceso que se está ejecutando actualmente en una CPU, el núcleo hace uso de la macro *current*, que es esencialmente equivalente a *current_thread_info()->task* y produce instrucciones en lenguaje ensamblador como las siguientes:
 
-..  code:: ASM
+..  code-block:: ASM
 
     movl $0xffffe000,%ecx /* or 0xfffff000 for 4KB stacks */
     andl %esp,%ecx
@@ -212,7 +212,24 @@ La tabla pidhash y las listas encadenadas
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
+..  slide:: System Calls as Kernel services
+    :inline-contents: True
+    :level: 2
 
+    |_|
+
+    .. ditaa::
+
+           +-------------+           +-------------+
+           | Application |  	     | Application |
+           +-------------+           +-------------+
+             |                           |
+             |read(fd, buff, len)        |fork()
+             |                           |
+             v                           v
+           +---------------------------------------+
+           |               Kernel                  |
+           +---------------------------------------+
 
 
 
