@@ -298,8 +298,103 @@ Por lo tanto, hay dos tipos de procesos dormidos: los *procesos exclusivos* (ind
 Manejo de colas de espera
 >>>>>>>>>>>>>>>>>>>>>>>>>
 
+Se puede definir una nueva cabecera de cola de espera utilizando la macro DECLARE_WAIT_QUEUE_HEAD(name), que declara estáticamente una nueva variable de cabecera de cola de espera llamada *name* e inicializa sus campos *lock* y *task_list*.
 
+La función *init_waitqueue_entry(q,p)* inicializa una estructura *wait_queue_t* *q* de la siguiente manera:
 
+..  code-block:: c
+
+    q->flags = 0;
+    q->task = p;
+    q->func = default_wake_function;
+
+El proceso no exclusivo *p* será despertado por *default_wake_function()*, que es un contenedor simple para la función *try_to_wake_up()* que veremos posteriormente.
+
+Alternativamente, la macro DEFINE_WAIT declara una nueva variable *wait_queue_t* y la inicializa con el descriptor del proceso que se está ejecutando actualmente en la CPU y la dirección de la función de despertar *autoremove_wake_function()*. Esta función invoca *default_wake_function()* para despertar el proceso dormido y luego elimina el elemento de la cola de espera de la lista de colas de espera. Finalmente, un programador de núcleo puede definir una función de despertar personalizada inicializando el elemento de la cola de espera con la función *init_waitqueue_func_entry()*.
+
+Una vez que se define un elemento, debe insertarse en una cola de espera. La función *add_wait_queue()* inserta un proceso no exclusivo en la primera posición de una lista de cola de espera. La función *add_wait_queue_exclusive()* inserta un proceso exclusivo en la última posición de una lista de cola de espera. La función *remove_wait_queue()* elimina un proceso de una lista de cola de espera. La función *waitqueue_active()* verifica si una lista de cola de espera dada está vacía.
+
+Un proceso que desee esperar una condición específica puede invocar cualquiera de las funciones que se muestran en la siguiente lista.
+
+- La función *sleep_on()* opera sobre el proceso actual:
+
+    ..  code-block:: c
+
+        void sleep_on(wait_queue_head_t *wq)
+        {
+            wait_queue_t wait;
+            init_waitqueue_entry(&wait, current);
+            current->state = TASK_UNINTERRUPTIBLE;
+            add_wait_queue(wq,&wait); /* wq apunta a la cabecera de la cola de espera */
+            schedule();
+            remove_wait_queue(wq, &wait);
+        }
+
+    La función establece el estado del proceso actual en TASK_UNINTERRUPTIBLE y lo inserta en la cola de espera especificada. Luego invoca al planificador, que reanuda la ejecución de otro proceso. Cuando se despierta el proceso dormido, el planificador reanuda la ejecución de la función *sleep_on()*, que elimina el proceso de la cola de espera.
+- La función *interrumpible_sleep_on()* es idéntica a *sleep_on()*, excepto que establece el estado del proceso actual en TASK_INTERRUPTIBLE en lugar de establecerlo en TASK_UNINTERRUPTIBLE, de modo que el proceso también puede ser despertado al recibir una señal.
+- Las funciones *sleep_on_timeout()* e *interrumpible_sleep_on_timeout()* son similares a las anteriores, pero también permiten al llamador definir un intervalo de tiempo después del cual el proceso será despertado por el núcleo. Para ello, invocan la función *schedule_timeout()* en lugar de *schedule()*.
+- Las funciones *prepare_to_wait()*, *prepare_to_wait_exclusive()* y *finish_wait()*, introducidas en Linux 2.6, ofrecen otra forma de poner el proceso actual a dormir en una cola de espera. Normalmente, se utilizan de la siguiente manera:
+
+    ..  code-block:: c
+
+        DEFINE_WAIT(wait);
+        prepare_to_wait_exclusive(&wq, &wait, TASK_INTERRUPTIBLE);
+               /* wq es la cabecera de la cola de espera */
+        ...
+        if (!condition)
+            schedule();
+        finish_wait(&wq, &wait);
+
+    Las funciones *prepare_to_wait()* y *prepare_to_wait_exclusive()* establecen el estado del proceso en el valor pasado como tercer parámetro, luego establecen el indicador exclusivo en el elemento de la cola de espera respectivamente en 0 (no exclusivo) o 1 (exclusivo) y, finalmente, insertan el elemento de la cola de espera *wait* en la lista de la cabecera de la cola de espera *wq*.
+
+    Tan pronto como el proceso se despierta, ejecuta la función *finish_wait()*, que establece nuevamente el estado del proceso a TASK_RUNNING (solo en caso de que la condición de despertar se vuelva verdadera antes de invocar schedule()), y elimina el elemento de la cola de espera de la lista de colas de espera (a menos que esto ya haya sido hecho por la función de despertar).
+
+- Las macros *wait_event* y *wait_event_interruptible* ponen al proceso que llama a dormir en una cola de espera hasta que se verifique una condición dada. Por ejemplo, la macro *wait_ event(wq,condition)* produce esencialmente el siguiente fragmento:
+
+    ..  code-block:: c
+
+        DEFINE_WAIT(_ _wait);
+        for (;;) {
+            prepare_to_wait(&wq, &_ _wait, TASK_UNINTERRUPTIBLE);
+            if (condition)
+                break;
+            schedule();
+        }
+        finish_wait(&wq, &_ _wait);
+
+Algunos comentarios sobre las funciones mencionadas en la lista anterior: las funciones similares a *sleep_on()-nn* no se pueden usar en la situación común donde uno tiene que probar una condición y poner atómicamente el proceso a dormir cuando la condición no se verifica; por lo tanto, debido a que son una fuente bien conocida de condiciones de carrera, se desaconseja su uso.
+
+Además, para insertar un proceso exclusivo en una cola de espera, el núcleo debe hacer uso de la función *prepare_to_wait_exclusive()*; cualquier otra función auxiliar inserta el proceso como no exclusivo. Finalmente, a menos que se utilicen DEFINE_WAIT o *finish_wait()*, el núcleo debe eliminar el elemento de la cola de espera de la lista después de que se haya despertado el proceso en espera.
+
+El núcleo despierta los procesos en las colas de espera, poniéndolos en el estado TASK_RUNNING, por medio de una de las siguientes macros: *wake_up*, *wake_up_nr*, *wake_up_all*, *wake_up_interruptible*, *wake_up_interruptible_nr*, *wake_up_interruptible_all*, *wake_up_interruptible_sync* y *wake_up_locked*. Se puede entender lo que hace cada una de estas nueve macros a partir de su nombre:
+
+- Todas las macros tienen en cuenta los procesos dormidos en la cola TASK_INT. Estado ERRUPTIBLE; si el nombre de la macro no incluye la cadena “interrumpible”, también se consideran los procesos inactivos en el estado TASK_UNINTERRUPTIBLE.
+- Todas las macros despiertan todos los procesos no exclusivos que tienen el estado requerido.
+- Las macros cuyo nombre incluye la cadena “*nr*” despiertan una cantidad dada de procesos exclusivos que tienen el estado requerido; este número es un parámetro de la macro. Las macros cuyos nombres incluyen la cadena “*all*” despiertan todos los procesos exclusivos que tienen el estado requerido. Finalmente, las macros cuyos nombres no incluyen “*nr*” o “*all*” despiertan exactamente un proceso exclusivo que tiene el estado requerido.
+- Las macros cuyos nombres no incluyen la cadena “*sync*” verifican si la prioridad de alguno de los procesos despertados es mayor que la de los procesos que se están ejecutando actualmente en los sistemas e invocan *schedule()* si es necesario. Estas verificaciones no las realiza la macro cuyo nombre incluye la cadena “*sync*”; como resultado, la ejecución de un proceso de alta prioridad puede demorarse ligeramente.
+- La macro *wake_up_locked* es similar a *wake_up*, excepto que se llama cuando el spin lock en *wait_queue_head_t* ya está retenido.
+
+Por ejemplo, la macro *wake_up* es esencialmente equivalente al siguiente fragmento de código:
+
+..  code-block:: c
+
+    void wake_up(wait_queue_head_t *q)
+    {
+        struct list_head *tmp;
+        wait_queue_t *curr;
+        list_for_each(tmp, &q->task_list) {
+            curr = list_entry(tmp, wait_queue_t, task_list);
+            if (curr->func(curr, TASK_INTERRUPTIBLE|TASK_UNINTERRUPTIBLE, 0, NULL) && curr->flags)
+            break;
+        }
+    }
+
+La macro *list_for_each* escanea todos los elementos en la lista doblemente *enlazada q->task_list*, es decir, todos los procesos en la cola de espera. Para cada elemento, la macro *list_entry* calcula la dirección de la variable *wait_queue_t* correspondiente. El campo *func* de esta variable almacena la dirección de la función de activación, que intenta activar el proceso identificado por el campo *task* del elemento de la cola de espera. Si un proceso se ha activado de manera efectiva (la función devolvió 1) y si el proceso es exclusivo (*curr->flags* igual a 1), el bucle termina. Dado que todos los procesos no exclusivos están siempre al principio de la lista doblemente enlazada y todos los procesos exclusivos están al final, la función siempre despierta los procesos no exclusivos y luego despierta un proceso exclusivo, si existe alguno.
+
+Cambio de proceso
+-----------------
+
+Para controlar la ejecución de los procesos, el núcleo debe poder suspender la ejecución del proceso que se está ejecutando en la CPU y reanudar la ejecución de algún otro proceso suspendido previamente. Esta actividad se conoce con los nombres de *cambio de proceso*, *cambio de tarea* o *cambio de contexto*. A continuación se describen los elementos del cambio de proceso en Linux.
 
 
 
