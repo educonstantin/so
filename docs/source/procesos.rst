@@ -396,6 +396,99 @@ Cambio de proceso
 
 Para controlar la ejecución de los procesos, el núcleo debe poder suspender la ejecución del proceso que se está ejecutando en la CPU y reanudar la ejecución de algún otro proceso suspendido previamente. Esta actividad se conoce con los nombres de *cambio de proceso*, *cambio de tarea* o *cambio de contexto*. A continuación se describen los elementos del cambio de proceso en Linux.
 
+Contexto de hardware
+********************
+Aunque cada proceso puede tener su propio espacio de direcciones, todos los procesos tienen que compartir los registros de la CPU. Por lo tanto, antes de reanudar la ejecución de un proceso, el núcleo debe asegurarse de que cada uno de esos registros esté cargado con el valor que tenía cuando se suspendió el proceso.
+
+El conjunto de datos que se deben cargar en los registros antes de que el proceso reanude su ejecución en la CPU se denomina *contexto de hardware*. El contexto de hardware es un subconjunto del contexto de ejecución del proceso, que incluye toda la información necesaria para la ejecución del proceso. En Linux, una parte del contexto de hardware de un proceso se almacena en el descriptor de proceso, mientras que la parte restante se guarda en la pila del núcleo.
+
+En la descripción que sigue, asumiremos que la variable local *prev* se refiere al descriptor de proceso del proceso que está saliendo y *next* se refiere al que está ingresando para reemplazarlo. Por lo tanto, podemos definir un cambio de proceso como la actividad que consiste en guardar el contexto de hardware de *prev* y reemplazarlo con el contexto de hardware de *next*. Debido a que los cambios de proceso ocurren con bastante frecuencia, es importante minimizar el tiempo empleado en guardar y cargar contextos de hardware.
+
+Las versiones anteriores de Linux aprovechaban el soporte de hardware ofrecido por la arquitectura 80×86 y realizaban un cambio de proceso a través de una instrucción *far jmp** al selector del Descriptor de Segmento de Estado de Tarea del siguiente proceso. Mientras se ejecuta la instrucción, la CPU realiza un cambio de contexto de hardware guardando automáticamente el contexto de hardware anterior y cargando uno nuevo. Pero Linux 2.6 utiliza software para realizar un cambio de proceso por las siguientes razones:
+
+- El cambio paso a paso realizado a través de una secuencia de instrucciones *mov* (instrucción en lenguaje ensamblador) permite un mejor control sobre la validez de los datos que se están cargando. En particular, es posible verificar los valores de los registros de segmentación *ds* y *es*, que podrían haber sido falsificados por un usuario malintencionado. Este tipo de verificación no es posible cuando se utiliza una sola instrucción *far jmp*.
+- La cantidad de tiempo requerida por el enfoque anterior y el nuevo es aproximadamente la misma. Sin embargo, no es posible optimizar un cambio de contexto de hardware, mientras que podría haber espacio para mejorar el código de cambio actual.
+
+El cambio de proceso ocurre solo en modo kernel. El contenido de todos los registros utilizados por un proceso en modo usuario ya se ha guardado en la pila del núcleo antes de realizar el cambio de proceso. Esto incluye el contenido del par *ss* y *esp* que especifica la dirección del puntero de la pila del modo usuario.
+
+Creando procesos
+----------------
+Los sistemas operativos Unix dependen en gran medida de la creación de procesos para satisfacer las solicitudes de los usuarios. Por ejemplo, el shell crea un nuevo proceso que ejecuta otra copia del shell cada vez que el usuario introduce un comando.
+
+Los sistemas Unix tradicionales tratan todos los procesos de la misma manera: los recursos que posee el proceso padre se duplican en el proceso hijo. Este enfoque hace que la creación de procesos sea muy lenta e ineficiente, porque requiere copiar todo el espacio de direcciones del proceso padre. El proceso hijo rara vez necesita leer o modificar todos los recursos heredados del padre; en muchos casos, inmediatamente emite *execve()* y borra el espacio de direcciones que se copió con tanto cuidado.
+
+Los núcleos Unix modernos resuelven este problema introduciendo tres mecanismos diferentes:
+
+- La técnica *Copy On Write* permite que tanto el padre como el hijo lean las mismas páginas físicas. Siempre que cualquiera de ellos intenta escribir en una página física, el núcleo copia su contenido en una nueva página física que se asigna al proceso de escritura.
+- Los *procesos ligeros* o *lightweight process* permiten que tanto el padre como el hijo compartan muchas estructuras de datos del núcleo por proceso, como las tablas de paginación (y, por lo tanto, todo el espacio de direcciones del modo de usuario), las tablas de archivos abiertos y las disposiciones de señales.
+- La llamada al sistema *vfork()* crea un proceso que comparte el espacio de direcciones de memoria de su padre. Para evitar que el padre sobrescriba los datos que necesita el hijo, la ejecución del padre se bloquea hasta que el hijo salga o ejecute un nuevo programa.
+
+Hilos del núcleo
+****************
+Los sistemas Unix tradicionales delegan algunas tareas críticas a procesos que se ejecutan de forma intermitente, incluyendo el vaciado de cachés de disco, el intercambio de páginas no utilizadas, el servicio de conexiones de red, etc. De hecho, no es eficiente realizar estas tareas de forma estrictamente lineal; tanto sus funciones como los procesos del usuario final obtienen una mejor respuesta si se programan en segundo plano. Debido a que algunos de los procesos del sistema se ejecutan sólo en modo kernel, los sistemas operativos modernos delegan sus funciones a los *hilos del kernel*, que no están sobrecargados con el contexto innecesario del modo usuario. En Linux, los hilos del kernel difieren de los procesos regulares en las siguientes formas:
+
+- Los hilos del kernel se ejecutan sólo en modo kernel, mientras que los procesos regulares se ejecutan alternativamente en modo kernel y en modo usuario.
+- Debido a que los hilos del kernel se ejecutan sólo en modo kernel, utilizan sólo un conjunto de direcciones lineales (mayores que PAGE_OFFSET). Los procesos regulares, por otro lado, utilizan los cuatro gigabytes de direcciones lineales, ya sea en modo usuario o en modo kernel.
+
+Proceso 0
+>>>>>>>>>
+
+El antecesor de todos los procesos, llamado *proceso 0*, el *proceso inactivo* o, por razones históricas, el *proceso intercambiador* o *swapper*, es un hilo del núcleo creado desde cero durante la fase de inicialización de Linux. Este proceso ancestro utiliza las siguientes estructuras de datos asignadas estáticamente (las estructuras de datos para todos los demás procesos se asignan dinámicamente):
+
+- Un descriptor de proceso almacenado en la variable init_task, que se inicializa mediante la macro INIT_TASK.
+- Un descriptor thread_info y una pila de modo de núcleo almacenada en la variable init_thread_union e inicializada por la macro INIT_THREAD_INFO.
+- Las siguientes tablas, a las que apunta el descriptor de proceso:
+    - init_mm
+    - init_fs
+    - init_files
+    - init_signals
+    - init_sighand
+
+La función *start_kernel()* inicializa todas las estructuras de datos que necesita el núcleo, habilita las interrupciones y crea otro hilo del núcleo, llamado *proceso 1* (más comúnmente conocido como el *proceso init*):
+
+..  code-block:: c
+
+    kernel_thread(init, NULL, CLONE_FS|CLONE_SIGHAND);
+
+El hilo del núcleo recién creado tiene PID 1 y comparte todas las estructuras de datos del núcleo por proceso con el proceso 0. Cuando lo selecciona el planificador, el proceso *init* comienza a ejecutar la función *init()*.
+
+Después de haber creado el proceso *init*, el proceso 0 ejecuta la función *cpu_idle()*, que esencialmente consiste en ejecutar repetidamente la instrucción de lenguaje ensamblador *hlt* con las interrupciones habilitadas. El planificador selecciona el proceso 0 solo cuando no hay otros procesos en el estado TASK_RUNNING.
+
+En sistemas multiprocesador hay un proceso 0 para cada CPU. Inmediatamente después del encendido, el BIOS de la computadora inicia una sola CPU mientras deshabilita las otras. El proceso *swapper* que se ejecuta en la CPU 0 inicializa las estructuras de datos del núcleo, luego habilita las otras CPU y crea los procesos de *swapper* adicionales por medio de la función *copy_process()*, pasándole el valor 0 como el nuevo PID. Además, el núcleo establece el campo *cpu* del descriptor *thread_info* de cada proceso bifurcado en el índice de CPU adecuado.
+
+Proceso 1
+>>>>>>>>>
+El hilo del núcleo creado por el proceso 0 ejecuta la función *init()*, que a su vez completa la inicialización del núcleo. Luego, *init()* invoca la llamada al sistema *execve()* para cargar el programa ejecutable *init*. Como resultado, el hilo del núcleo *init* se convierte en un proceso regular que tiene su propia estructura de datos del núcleo por proceso. El proceso *init* permanece activo hasta que se apaga el sistema, porque crea y monitorea la actividad de todos los procesos que implementan las capas externas del sistema operativo.
+
+Destrucción de procesos
+-----------------------
+La mayoría de los procesos “mueren” en el sentido de que terminan la ejecución del código que se supone que debían ejecutar. Cuando esto ocurre, el núcleo debe recibir una notificación para que pueda liberar los recursos que posee el proceso; esto incluye memoria, archivos abiertos y cualquier otro elemento, como los semáforos.
+
+La forma habitual de que un proceso termine es invocar la función de biblioteca *exit()*, que libera los recursos asignados por la biblioteca C, ejecuta cada función registrada por el programador y termina invocando una llamada al sistema que expulsa al proceso del sistema. El programador puede insertar la función de biblioteca *exit()* de forma explícita. Además, el compilador de C siempre inserta una llamada a la función *exit()* justo después de la última declaración de la función *main()*.
+
+Alternativamente, el núcleo puede obligar a que muera todo un grupo de hilos. Esto suele ocurrir cuando un proceso del grupo ha recibido una señal que no puede manejar o ignorar o cuando se ha generado una excepción de CPU irrecuperable en el modo kernel mientras el kernel se estaba ejecutando en nombre del proceso.
+
+Terminación de proceso
+**********************
+En Linux 2.6 hay dos llamadas al sistema que terminan una aplicación en modo usuario:
+
+- La llamada al sistema *exit_group()*, que termina un grupo de hilos completo, es decir, una aplicación multiproceso completa. La función principal del núcleo que implementa esta llamada al sistema se llama *do_group_exit()*. Esta es la llamada al sistema que debe ser invocada por la función de la biblioteca C *exit()*.
+- La llamada al sistema *_exit()*, que termina un solo proceso, independientemente de cualquier otro proceso en el grupo de hilos de la víctima. La función principal del núcleo que implementa esta llamada al sistema se llama *do_exit()*. Esta es la llamada al sistema invocada, por ejemplo, por la función *pthread_exit()* de la biblioteca.
+
+Remoción de procesos
+********************
+El sistema operativo Unix permite que un proceso consulte al núcleo para obtener el PID de su proceso padre o el estado de ejecución de cualquiera de sus hijos. Un proceso puede, por ejemplo, crear un proceso hijo para realizar una tarea específica y luego invocar una función de biblioteca similar a *wait()* para verificar si el hijo ha terminado. Si el hijo ha terminado, su código de terminación le dirá al proceso padre si la tarea se ha llevado a cabo con éxito.
+
+Para cumplir con estas opciones de diseño, los núcleos Unix no pueden descartar datos incluidos en un campo de descriptor de proceso justo después de que el proceso termine. Pueden hacerlo solo después de que el proceso padre haya emitido una llamada al sistema *wait()* que haga referencia al proceso terminado. Por eso se ha introducido el estado EXIT_ZOMBIE: aunque el proceso está técnicamente muerto, su descriptor debe guardarse hasta que se notifique al proceso padre.
+
+¿Qué sucede si los procesos padres terminan antes que sus hijos? En tal caso, el sistema podría inundarse de procesos zombies cuyos descriptores de proceso permanecerían para siempre en la memoria RAM. Como se mencionó anteriormente, este problema se resuelve obligando a todos los procesos huérfanos a convertirse en hijos del proceso *init*. De esta manera, el proceso *init* destruirá a los procesos zombies mientras verifica la terminación de uno de sus procesos hijos legítimos a través de una llamada al sistema *wait()*.
+
+
+
+
+
+
+
 
 
 
