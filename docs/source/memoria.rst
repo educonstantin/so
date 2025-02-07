@@ -501,7 +501,7 @@ Cuando ocurre un fallo de caché, la línea de caché se escribe en la memoria, 
 
 
 
-..  figure:: ../images/memoria-11-cache-en-procesadores-duales.png
+..  figure:: ../images/memoria-figura-11-cache-en-procesadores-duales.png
     :align: center
     :alt: Figura 11 - Caché en procesadores duales
 
