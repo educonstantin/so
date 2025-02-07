@@ -1,5 +1,5 @@
-Direccionamiento de memoria
-===========================
+Memoria
+=======
 Trataremos las técnicas de direccionamiento. Afortunadamente, un sistema operativo no está obligado a realizar un seguimiento de la memoria física por sí mismo; Los microprocesadores actuales incluyen varios circuitos de hardware para hacer que la gestión de la memoria sea más eficiente y robusta, de modo que los errores de programación no puedan causar accesos indebidos a la memoria fuera del programa.
 
 Veremos los detalles sobre cómo los microprocesadores 80x86 direccionan memoria y cómo Linux usa los circuitos de direccionamiento disponibles.
