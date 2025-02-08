@@ -57,6 +57,7 @@ Cada interrupción o excepción se identifica mediante un número que va de 0 a 
 IRQs e Interrupciones
 ---------------------
 Cada controlador de dispositivo de hardware capaz de emitir solicitudes de interrupción normalmente tiene una única línea de salida designada como la línea de solicitud de interrupción (IRQ). Todas las líneas IRQ existentes están conectadas a los pines de entrada de un circuito de hardware llamado *controlador de interrupciones programable*, que realiza las siguientes acciones:
+
  1. Monitorea las líneas IRQ, verificando si hay señales elevadas. Si hay dos o más líneas IRQ elevadas, selecciona la que tenga el número de pin más bajo.
  2. Si se produce una señal elevada en una línea IRQ:
 
