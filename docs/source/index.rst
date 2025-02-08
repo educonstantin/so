@@ -21,4 +21,3 @@ Aquí encontrarás todo lo necesario para la asignatura.
    memoria
    procesos
    interrupciones
-   conceptos
