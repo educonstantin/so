@@ -136,9 +136,11 @@ El IDT puede incluir tres tipos de descriptores; la Figura 4-2 ilustra el signif
 
 Manejo de interrupciones y excepciones por hardware
 ---------------------------------------------------
+
 Ahora describiremos cómo la unidad de control de la CPU maneja las interrupciones y excepciones. Suponemos que el núcleo se ha inicializado y, por lo tanto, la CPU está funcionando en modo protegido.
 
 Después de ejecutar una instrucción, el par de registros *cs* y *eip* contienen la dirección lógica de la siguiente instrucción que se ejecutará. Antes de tratar esa instrucción, la unidad de control verifica si se produjo una interrupción o una excepción mientras la unidad de control ejecutaba la instrucción anterior. Si se produjo una, la unidad de control hace lo siguiente:
+
  1. Determina el vector *i* (0≤i≤255) asociado con la interrupción o la excepción.
  2. Lee la entrada i-ésima del IDT al que hace referencia el registro *idtr*.
  3. Obtiene la dirección base del GDT del registro *gdtr* y busca en el GDT para leer el descriptor de segmento identificado por el selector en la entrada del IDT. Este descriptor especifica la dirección base del segmento que incluye el controlador de interrupción o excepción.
@@ -156,6 +158,7 @@ Después de ejecutar una instrucción, el par de registros *cs* y *eip* contiene
 El último paso realizado por la unidad de control es equivalente a un salto al manejador de interrupciones o excepciones. En otras palabras, la instrucción procesada por la unidad de control después de tratar la señal de interrupción es la primera instrucción del manejador seleccionado.
 
 Después de procesar la interrupción o excepción, el manejador correspondiente debe ceder el control al proceso interrumpido emitiendo la instrucción *iret*, que obliga a la unidad de control a:
+
  1. Cargar los registros *cs*, *eip* y *eflags* con los valores guardados en la pila. Si se ha insertado un código de error de hardware en la pila sobre el contenido de *eip*, se debe extraer antes de ejecutar *iret*.
  2. Verificar si el CPL del manejador es igual al valor contenido en los dos bits menos significativos de *cs* (esto significa que el proceso interrumpido se estaba ejecutando en el mismo nivel de privilegio que el manejador). Si es así, *iret* concluye la ejecución; de lo contrario, pasa al siguiente paso.
  3. Carga los registros *ss* y *esp* de la pila y vuelva a la pila asociada con el nivel de privilegio anterior.
