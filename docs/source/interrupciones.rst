@@ -1,5 +1,5 @@
-Interrupciones
-==============
+Introducción
+============
 
 Una *interrupción* se define generalmente como un evento que altera la secuencia de instrucciones ejecutadas por un procesador. Dichos eventos corresponden a señales eléctricas generadas por circuitos de hardware tanto dentro como fuera del chip de la CPU.
 
