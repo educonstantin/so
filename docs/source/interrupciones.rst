@@ -1,5 +1,5 @@
-Interrupciones
-==============
+Interrupciones y Excepciones
+============================
 
 Una *interrupción* se define generalmente como un evento que altera la secuencia de instrucciones ejecutadas por un procesador. Dichos eventos corresponden a señales eléctricas generadas por circuitos de hardware tanto dentro como fuera del chip de la CPU.
 
@@ -564,12 +564,115 @@ Observe que, a menos que la función tasklet se reactive a sí misma, cada activ
 
 Work Queues
 -----------
+Las colas de trabajo se introdujeron en Linux 2.6 y reemplazan una construcción similar llamada “cola de tareas” utilizada en Linux 2.4. Permiten que las funciones del núcleo se activen (de manera muy similar a las funciones diferibles) y luego se ejecuten mediante hilos del núcleo especiales llamados *hilos de trabajo*.
 
+A pesar de sus similitudes, las funciones diferibles y las colas de trabajo son bastante diferentes. La principal diferencia es que las funciones diferibles se ejecutan en un contexto de interrupción, mientras que las funciones en colas de trabajo se ejecutan en un contexto de proceso. La ejecución en un contexto de proceso es la única forma de ejecutar funciones que pueden bloquearse (por ejemplo, funciones que necesitan acceder a algún bloque de datos en el disco) porque, como ya se observó en la sección “Ejecución anidada de controladores de excepciones e interrupciones” anteriormente en este capítulo, no se puede realizar ningún cambio de proceso en un contexto de interrupción. Ni las funciones diferibles ni las funciones en una cola de trabajo pueden acceder al espacio de direcciones del modo de usuario de un proceso. De hecho, una función diferible no puede hacer ninguna suposición sobre el proceso que se está ejecutando actualmente cuando se ejecuta. Por otro lado, una función en una cola de trabajo es ejecutada por un hilo del núcleo, por lo que no hay espacio de direcciones de modo de usuario al que acceder.
 
+Estructuras de datos de work queues
+***********************************
 
+La estructura de datos principal asociada con una cola de trabajo es un descriptor llamado *workqueue_struct*, que contiene, entre otras cosas, un vector de elementos NR_CPUS, el número máximo de CPUs en el sistema. Cada elemento es un descriptor de tipo *cpu_workqueue_struct*, cuyos campos se muestran en la siguiente tabla.
 
++---------------------------+----------------------------------------------------------+
+| Campo                     | Descripción                                              |
++===========================+==========================================================+
+|lock                       | Spin lock usado para proteger la estructura              |
++---------------------------+----------------------------------------------------------+
+|remove_sequence            | Número de secuencia usado por *flush_workqueue()*        |
++---------------------------+----------------------------------------------------------+
+|insert_sequence            | Número de secuencia usado por *flush_workqueue()*        |
++---------------------------+----------------------------------------------------------+
+|work_list                  | Cabecera de la lista de funciones pendientes             |
++---------------------------+----------------------------------------------------------+
+|more_work                  | Cola de espera donde los hilos trabajadores esperan      |
+|                           | dormidos por más trabajo                                 |
++---------------------------+----------------------------------------------------------+
+|work_done                  | Cola de espera donde se encuentran inactivos los         |
+|                           | hilos que esperan a que se vacíe la cola de trabajo      |
++---------------------------+----------------------------------------------------------+
+|wq                         | Puntero a la estructura *workqueue_struct*               |
++---------------------------+----------------------------------------------------------+
+|thread                     | Puntero al descriptor de proceso del hilo de la          |
+|                           | estructura                                               |
++---------------------------+----------------------------------------------------------+
+|run_depth                  | Actual profundidad de ejecución de *run_workqueue()*     |
++---------------------------+----------------------------------------------------------+
 
+El campo *worklist* de la estructura *cpu_workqueue_struct* es la cabecera de una lista doblemente enlazada que recoge las funciones pendientes de la cola de trabajo. Cada función pendiente está representada por una estructura de datos *work_struct*, cuyos campos se muestran en la siguiente tabla.
 
++---------------------------+----------------------------------------------------------+
+|Campo                      |Descripción                                               |
++===========================+==========================================================+
+|pending                    |1 si la función está en lista, 0 en otro caso             |
++---------------------------+----------------------------------------------------------+
+|entry                      |Punteros a elementos anteriores y siguientes en la        |
+|                           |lista de funciones pendientes                             |
++---------------------------+----------------------------------------------------------+
+|func                       |Dirección de la función pendiente                         |
++---------------------------+----------------------------------------------------------+
+|data                       |Puntero pasado como parámetro a la función pendiente      |
++---------------------------+----------------------------------------------------------+
+|wq_data                    |Generalmente apunta al descriptor *cpu_workqueue_struct*  |
+|                           |principal                                                 |
++---------------------------+----------------------------------------------------------+
+|timer                      |Temporizador de software utilizado para retrasar la       |
+|                           |ejecución de la función pendiente                         |
++---------------------------+----------------------------------------------------------+
+
+Funciones de la cola de trabajo
+*******************************
+La función *create_workqueue("foo")* recibe como parámetro una cadena de caracteres y devuelve la dirección de un descriptor *workqueue_struct* para la cola de trabajo recién creada. La función también crea *n* hilos de trabajo (donde n es el número de CPUs presentes efectivamente en el sistema), nombrados según la cadena pasada a la función: *foo/0, foo/1*, y así sucesivamente. La función *create_singlethread_workqueue()* es similar, pero crea sólo un hilo de trabajo, sin importar el número de CPUs en el sistema. Para destruir una cola de trabajo, el núcleo invoca la función *destroy_workqueue()*, que recibe como parámetro un puntero a un vector *workqueue_struct*.
+
+*queue_work()* inserta una función (ya empaquetada dentro de un descriptor *work_struct*) en una cola de trabajo; recibe un puntero *wq* al descriptor *workqueue_struct* y un puntero *work* al descriptor *work_struct*. *queue_work()* esencialmente realiza los siguientes pasos:
+
+1. Verifica si la función a ser insertada ya está presente en la cola de trabajo (el campo *work->pending* es igual a 1); si es así, termina.
+2. Agrega el descriptor *work_struct* a la lista de colas de trabajo y establece *work->pending* en 1.
+3. Si un hilo de trabajo está durmiendo en la cola de espera *more_work* del descriptor *cpu_workqueue_struct* de la CPU local, la función lo despierta.
+
+La función *queue_delayed_work()* es casi idéntica a *queue_work()*, excepto que recibe un tercer parámetro que representa un retraso de tiempo en los ticks del sistema. Se utiliza para asegurar un retraso mínimo antes de la ejecución de la función pendiente. En la práctica, *queue_delayed_work()* se basa en el temporizador de software en el campo timer del descriptor *work_struct* para diferir la inserción real del descriptor *work_struct* en la lista de colas de trabajo. *cancel_delayed_work()* cancela una función de cola de trabajo previamente programada, siempre que el descriptor *work_struct* correspondiente no se haya insertado ya en la lista de colas de trabajo.
+
+Cada hilo de trabajo ejecuta continuamente un bucle dentro de la función *worker_thread()*; La mayor parte del tiempo, el hilo está durmiendo y esperando que se ponga en cola algún trabajo. Una vez despertado, el hilo de trabajo invoca la función *run_workqueue()*, que esencialmente elimina cada descriptor *work_struct* de la lista de cola de trabajo del hilo de trabajo y ejecuta la función pendiente correspondiente. Debido a que las funciones de la cola de trabajo pueden bloquearse, el hilo de trabajo puede ponerse en reposo e incluso migrarse a otra CPU cuando se reanuda.
+
+A veces, el núcleo tiene que esperar hasta que se hayan ejecutado todas las funciones pendientes en una cola de trabajo. La función *flush_workqueue()* recibe una dirección de descriptor *workqueue_struct* y bloquea el proceso de llamada hasta que finalicen todas las funciones que están pendientes en la cola de trabajo. Sin embargo, la función no espera ninguna función pendiente que se haya agregado a la cola de trabajo después de la invocación de *flush_workqueue()*; los campos remove_sequence e *insert_sequence* de cada descriptor *cpu_workqueue_struct* se utilizan para reconocer las funciones pendientes recientemente agregadas.
+
+La cola de trabajo predefinida
+******************************
+En la mayoría de los casos, crear un conjunto completo de hilos de trabajo para ejecutar una función es excesivo. Por lo tanto, el núcleo ofrece una cola de trabajo predefinida llamada *events*, que puede ser utilizada libremente por cualquier programador de núcleo. La cola de trabajo predefinida no es más que una cola de trabajo estándar que puede incluir funciones de diferentes capas del núcleo y controladores de E/S; su descriptor *workqueue_struct* se almacena en el vector *keventd_wq*. Para hacer uso de la cola de trabajo predefinida, el núcleo ofrece las funciones listadas en la siguiente tabla.
+
++---------------------------------------+-----------------------------------------------------------+
+|Función de cola de trabajo predefinida |Función de cola de trabajo equivalente                     |
++=======================================+===========================================================+
+|schedule_work(w)                       |queue_work(keventd_wq,w)                                   |
++---------------------------------------+-----------------------------------------------------------+
+|schedule_delayed_work(w,d)             |queue_delayed_work(keventd_wq,w,d) (en cualquier CPU)      |
++---------------------------------------+-----------------------------------------------------------+
+|schedule_delayed_work_on(cpu,w,d)      |queue_delayed_work(keventd_wq,w,d) (en CPU predeterminada) |
++---------------------------------------+-----------------------------------------------------------+
+|flush_scheduled_work()                 |flush_workqueue(keventd_wq)                                |
++---------------------------------------+-----------------------------------------------------------+
+
+La cola de trabajo predefinida ahorra recursos significativos del sistema cuando la función rara vez se invoca. Por otro lado, las funciones ejecutadas en la cola de trabajo predefinida no deberían bloquearse durante mucho tiempo: debido a que la ejecución de las funciones pendientes en la lista de la cola de trabajo se serializan en cada CPU, un retraso prolongado afecta negativamente a los demás usuarios de la cola de trabajo predefinida.
+
+Además de la cola de *events* general, encontrará algunas colas de trabajo especializadas en Linux 2.6. La más significativa es la cola de trabajo kblockd utilizada por la capa del dispositivo de bloque.
+
+Regreso de interrupciones y excepciones
+---------------------------------------
+Terminaremos examinando la fase de terminación de los manejadores de interrupciones y excepciones. (Regresar de una llamada al sistema es un caso especial, y lo describiremos luego) Aunque el objetivo principal es claro, es decir, reanudar la ejecución de algún programa, se deben considerar varias cuestiones antes de hacerlo:
+
+*Número de rutas de control del núcleo que se ejecutan simultáneamente*
+    Si solo hay una, la CPU debe volver al modo de usuario.
+*Solicitudes de cambio de proceso pendientes*
+    Si hay alguna solicitud, el núcleo debe realizar la programación del proceso; de lo contrario, el control se devuelve al proceso actual.
+*Señales pendientes*
+    Si se envía una señal al proceso actual, debe manejarse.
+*Modo de un solo paso*
+    Si un depurador está rastreando la ejecución del proceso actual, se debe restaurar el modo de un solo paso antes de volver al modo de usuario.
+*Modo virtual-8086*
+    Si la CPU está en modo virtual-8086, el proceso actual está ejecutando un programa heredado de modo real, por lo tanto, debe manejarse de una manera especial.
+
+Se utilizan algunas banderas para llevar un registro de las solicitudes de cambio de proceso pendientes, de las señales pendientes y de la ejecución de un solo paso; se almacenan en el campo *flags* del descriptor *thread_info*. El campo también almacena otras banderas, pero no están relacionadas con el retorno de interrupciones y excepciones.
+
+El código de lenguaje ensamblador del núcleo que logra todas estas cosas no es, técnicamente hablando, una función, porque el control nunca se devuelve a las funciones que lo invocan. Es un fragmento de código con dos puntos de entrada diferentes: *ret_from_intr()* y *ret_from_exception()*. Como sugieren sus nombres, el núcleo ingresa al primero cuando finaliza un manejador de interrupciones, y al segundo cuando finaliza un manejador de excepciones. Nos referiremos a los dos puntos de entrada como funciones, porque esto hace que la descripción sea más sencilla.
 
 
 
