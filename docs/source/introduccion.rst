@@ -94,7 +94,7 @@ Un archivo Unix es un contenedor de información estructurado como una secuencia
 
 ..  _figura:
 
-..  figure:: ../images/introduccion_arbol.png
+..  figure:: ../images/introduccion-figura-1-arbol-de-directorios.png
     :align: center
     :alt: Árbol de directorios
 

@@ -21,9 +21,9 @@ La Unidad de Gestión de Memoria (MMU) transforma una dirección lógica en una 
 
 ..  figure:: ../images/memoria-figura-1-traduccion-direccion-logica.png
     :align: center
-    :alt: Traducción de dirección lógica
+    :alt: Figura 1 - Traducción de dirección lógica
 
-    Traducción de dirección lógica
+    Figura 1 - Traducción de dirección lógica
 
 En los sistemas multiprocesador, todas las CPU suelen compartir la misma memoria; esto significa que las CPU independientes pueden acceder simultáneamente a los chips de RAM. Debido a que las operaciones de lectura o escritura en un chip de RAM deben realizarse en serie, se inserta un circuito de hardware llamado *árbitro de memoria* entre el bus y cada chip de RAM. Su función es otorgar acceso a una CPU si el chip está libre y aplazarlo si el chip está ocupado atendiendo una solicitud de otro procesador. Incluso los sistemas de un solo procesador usan árbitros de memoria, porque incluyen procesadores especializados llamados *controladores DMA* que operan simultáneamente con la CPU.
 
@@ -37,9 +37,9 @@ Una dirección lógica consta de dos partes: un identificador de segmento y un d
 
 ..  figure:: ../images/memoria-figura-2-formato-selector-de-segmento.png
     :align: center
-    :alt: Formato del selector de segmento
+    :alt: Figura 2 - Formato del selector de segmento
 
-    Formato del selector de segmento
+    Figura 2 - Formato del selector de segmento
 
 Para facilitar la recuperación rápida de selectores de segmento, el procesador proporciona *registros de segmentación* cuyo único propósito es contener selectores de segmento; estos registros se denominan cs, ss, ds, es, fs y gs. Aunque solo hay seis de ellos, un programa puede reutilizar el mismo registro de segmentación para diferentes propósitos guardando su contenido en la memoria y luego restaurándolo más tarde.
 
@@ -208,7 +208,7 @@ La figura 5 muestra en detalle cómo se traduce una dirección lógica en una di
 - Calcula la dirección del descriptor de segmento a partir del campo *index* del selector de segmento. El campo de index se multiplica por 8 (el tamaño de un descriptor de segmento) y el resultado se suma al contenido del registro gdtr o ldtr.
 - Agrega el desplazamiento de la dirección lógica al campo *Base* del descriptor de segmento, obteniendo así la dirección lineal.
 
-..  figure:: ../images/memoria-figura-5-tracduccion-direccion-logica.png
+..  figure:: ../images/memoria-figura-5-traduccion-direccion-logica.png
     :align: center
     :alt: Figura 5 - Traduciendo una dirección lógica
 

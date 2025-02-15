@@ -82,7 +82,7 @@ Ser capaz de entregar interrupciones a cada CPU en el sistema es crucial para ex
 
 La figura 1 ilustra de forma esquemática la estructura de un sistema multi-APIC. Un bus APIC conecta la APIC de E/S “frontend” a las APIC locales. Las líneas IRQ que vienen de los dispositivos están conectadas a la APIC de E/S, que actúa como un router respecto a las APIC locales. En las placas base de los procesadores Pentium III y anteriores, el bus APIC era un bus serial de tres líneas; a partir del Pentium 4, el bus APIC se implementa mediante el bus del sistema. Sin embargo, como el bus APIC y sus mensajes son invisibles para el software, no daremos más detalles.
 
-..  figure:: ../images/interrupciones-excepciones-figura-1-sistema-multi-apic.png
+..  figure:: ../images/interrupciones-figura-1-sistema-multi-apic.png
     :align: center
     :alt: Figura 1 - Sistema Multi-APIC
 
@@ -128,7 +128,7 @@ El registro de CPU *idtr* permite que el IDT se ubique en cualquier lugar de la 
 
 El IDT puede incluir tres tipos de descriptores; la Figura 4-2 ilustra el significado de los 64 bits incluidos en cada uno de ellos. En particular, el valor del campo Tipo codificado en los bits 40–43 identifica el tipo de descriptor.
 
-..  figure:: ../images/interrupciones-excepciones-figura-2-formato-descriptores-manejadores.png
+..  figure:: ../images/interrupciones-figura-2-formato-descriptores-manejadores.png
     :align: center
     :alt: Figura 2 - Formato de los descriptores de los manejadores
 
@@ -170,7 +170,7 @@ Cada interrupción o excepción da lugar a una ruta de control del núcleo o a u
 
 Las rutas de control del núcleo pueden estar anidadas de forma arbitraria; un manejador de interrupciones puede ser interrumpido por otro manejador de interrupciones, dando lugar así a una ejecución anidada de rutas de control del núcleo, como se muestra en la figura 3. Como resultado, las últimas instrucciones de una ruta de control del núcleo que se encarga de una interrupción no siempre ponen el proceso actual de nuevo en modo usuario: si el nivel de anidación es mayor que 1, estas instrucciones pondrán en ejecución la ruta de control del núcleo que se interrumpió por última vez, y la CPU seguirá funcionando en modo núcleo.
 
-..  figure:: ../images/interrupciones-excepciones-figura-3-ejemplo-ejecucion-anidada-hilos-kernel.png
+..  figure:: ../images/interrupciones-figura-3-ejemplo-ejecucion-anidada-hilos-kernel.png
     :align: center
     :alt: Figura 3 - Un ejemplo de ejecución anidada de hilos del kernel
 
@@ -282,7 +282,7 @@ La arquitectura de PC compatible con IBM requiere que algunos dispositivos esté
 - El dispositivo temporizador de intervalo debe estar conectado a la línea IRQ0.
 - El PIC esclavo 8259A debe estar conectado a la línea IRQ2 (aunque ahora se están usando PIC más avanzados, Linux aún admite PIC de estilo 8259A).
 
-..  figure:: ../images/interrupciones-excepciones-figura-4-manejo-de-interrupciones-ES.png
+..  figure:: ../images/interrupciones-figura-4-manejo-de-interrupciones-ES.png
     :align: center
     :alt: Figura 4 - Manejo de interrupciones de E/S
 
@@ -334,7 +334,7 @@ Estructuras de datos de IRQs
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>
 Como siempre, cuando se discuten operaciones complicadas que involucran transiciones de estado, ayuda entender primero dónde se almacenan los datos clave. Por lo tanto, esta sección explica las estructuras de datos que soportan el manejo de interrupciones y cómo se disponen en varios descriptores. La figura 5 ilustra esquemáticamente las relaciones entre los descriptores principales que representan el estado de las líneas IRQ.
 
-..  figure:: ../images/interrupciones-excepciones-figura-5-descriptores-de-interrupciones.png
+..  figure:: ../images/interrupciones-figura-5-descriptores-de-interrupciones.png
     :align: center
     :alt: Figura 5 - Descriptores de IRQs
 

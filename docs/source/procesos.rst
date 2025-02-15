@@ -30,11 +30,11 @@ Descriptor de proceso
 
 Para gestionar procesos, el núcleo debe tener una idea clara de lo que hace cada proceso. Debe saber, por ejemplo, la prioridad del proceso, si se está ejecutando en una CPU o está bloqueado por un evento, qué espacio de direcciones se le ha asignado, qué archivos se le permite direccionar, etc. Ésta es la función del *descriptor de proceso*, una estructura de tipo *task_struct* cuyos campos contienen toda la información relacionada con un único proceso. Como repositorio de tanta información, el descriptor de proceso es bastante complejo. Además de una gran cantidad de campos que contienen atributos de proceso, el descriptor de proceso contiene varios punteros a otras estructuras de datos que, a su vez, contienen punteros a otras estructuras. La siguiente figura describe esquemáticamente el descriptor de proceso de Linux.
 
-..  figure:: ../images/linux_process_descriptor.png
+..  figure:: ../images/procesos-figura-1-descriptor-de-procesos-linux.png
     :align: center
-    :alt: Descriptor de procesos de Linux
+    :alt: Figura 1 - Descriptor de procesos de Linux
 
-    Descriptor de procesos de Linux
+    Figura 1 - Descriptor de procesos de Linux
 
 Estados de un proceso
 *********************
@@ -97,11 +97,11 @@ Anteriormente aprendimos que un proceso en modo núcleo accede a una pila conten
 La siguiente figura muestra cómo se almacenan las dos estructuras de datos en el área de memoria de 2 páginas (8 KB). La estructura thread_info se encuentra al principio del área de memoria y la pila crece hacia abajo desde el final. La figura también muestra que la estructura thread_info y la estructura task_struct están vinculadas entre sí por medio de los campos *task* y *thread_info*, respectivamente.
 
 
-..  figure:: ../images/thread_info_stack_kernel.png
+..  figure:: ../images/procesos-figura-2-estructura-hilo-pila-del-kernel.png
     :align: center
-    :alt: Estructura *thread_info* y la *pila de kernel del proceso* en dos marcos de página
+    :alt: Figura 2 - Estructura *thread_info* y la *pila de kernel del proceso* en dos marcos de página
 
-    Estructura *thread_info* y la *pila de kernel del proceso* en dos marcos de página
+    Figura 2 - Estructura *thread_info* y la *pila de kernel del proceso* en dos marcos de página
 
 El registro *esp* es el puntero de pila de la CPU, que se utiliza para direccionar la ubicación superior de la pila. En sistemas 80×86, la pila comienza al final y crece hacia el principio del área de memoria. Inmediatamente después de cambiar del modo usuario al modo núcleo, la pila del núcleo de un proceso siempre está vacía y, por lo tanto, el registro esp apunta al byte inmediatamente posterior a la pila.
 
@@ -138,7 +138,7 @@ Con mayor frecuencia, el kernel necesita la dirección del descriptor del proces
     movl $0xffffe000,%ecx /* or 0xfffff000 for 4KB stacks */
     andl %esp,%ecx
     movl (%ecx),p
-    
+
 Debido a que el campo *task* está en el desplazamiento 0 en la estructura *thread_info*, después de ejecutar estas tres instrucciones *p* contiene el puntero del descriptor de proceso del proceso que se está ejecutando en la CPU.
 
 La macro *current* aparece a menudo en el código del núcleo como un prefijo a los campos del descriptor de proceso. Por ejemplo, *current->pid* devuelve el ID del proceso que se está ejecutando actualmente en la CPU. Otra ventaja de almacenar el descriptor de proceso con la pila surge en sistemas multiprocesador: el proceso actual correcto para cada procesador de hardware se puede derivar simplemente comprobando la pila, como se mostró anteriormente. Las versiones anteriores de Linux no almacenaban la pila del núcleo y el descriptor de proceso juntos. En su lugar, se vieron obligados a introducir una variable estática global llamada *current* para identificar el descriptor de proceso del proceso en ejecución. En sistemas multiprocesador, era necesario definir *current* como una matriz: un elemento para cada CPU disponible.
@@ -202,11 +202,11 @@ Los procesos creados por un programa tienen una relación padre/hijo. Cuando un 
 
 La siguiente figura ilustra las relaciones padre/hijo de un grupo de procesos. El proceso P0 creó sucesivamente P1, P2 y P3. El proceso P3, a su vez, creó el proceso P4. Además, existen otras relaciones entre procesos: un proceso puede ser líder de un grupo de procesos o de una sesión de inicio de sesión, puede ser líder de un grupo de hilos y también puede rastrear la ejecución de otros procesos.
 
-..  figure:: ../images/relaciones-entre-procesos.png
+..  figure:: ../images/procesos-figura-3-relaciones-entre-procesos.png
     :align: center
-    :alt: Relaciones de paternidad entre cinco procesos
+    :alt: Figura 3 - Relaciones de paternidad entre cinco procesos
 
-    Relaciones de paternidad entre cinco procesos
+    Figura 3 - Relaciones de paternidad entre cinco procesos
 
 La tabla pidhash y las listas encadenadas
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -221,11 +221,11 @@ Linux utiliza el *encadenamiento* para manejar PIDs en colisión; cada entrada d
 
 El hash con encadenamiento es preferible a una transformación lineal de PIDs a índices de tabla porque en cualquier instancia dada, el número de procesos en el sistema es usualmente muy inferior a 32.768 (el número máximo de PIDs permitidos). Sería un desperdicio de almacenamiento definir una tabla que consista en 32.768 entradas, si, en cualquier instancia dada, la mayoría de dichas entradas no se utilizan.
 
-..  figure:: ../images/tabla-hash-pid-listas-encadenadas.png
+..  figure:: ../images/procesos-figura-4-tabla-hash-pid-listas-encadenadas.png
     :align: center
-    :alt: Una tabla hash PID simple y listas encadenadas
+    :alt: Figura 4 - Una tabla hash PID simple y listas encadenadas
 
-    Una tabla hash PID simple y listas encadenadas
+    Figura 4 - Una tabla hash PID simple y listas encadenadas
 
 Las estructuras de datos utilizadas en las tablas hash PID son bastante sofisticadas, porque deben mantener un registro de las relaciones entre los procesos. Como ejemplo, supongamos que el núcleo debe recuperar todos los procesos que pertenecen a un grupo de hilos determinado, es decir, todos los procesos cuyo campo tgid es igual a un número determinado. Al buscar en la tabla hash el número de grupo de hilos dado, se obtiene sólo un descriptor de proceso, es decir, el descriptor del líder del grupo de hilos. Para recuperar rápidamente los demás procesos del grupo, el núcleo debe mantener una lista de procesos para cada grupo de hilos. La misma situación surge cuando se buscan los procesos que pertenecen a una sesión de inicio de sesión determinada o que pertenecen a un grupo de procesos determinado.
 
@@ -244,11 +244,11 @@ Las estructuras de datos de las tablas hash PID resuelven todos estos problemas,
 
 La siguiente figura muestra un ejemplo basado en la tabla hash PIDTYPE_TGID (tabla de grupo de hilos). La segunda entrada de la matriz *pid_hash* almacena la dirección de la tabla hash, es decir, la matriz de estructuras *hlist_head* que representan las cabeceras de las listas de la cadena. En la lista de la cadena con raíz en la entrada 71 de la tabla hash, hay dos descriptores de proceso correspondientes a los números PID 246 y 4.351 (las líneas de doble flecha representan un par de punteros hacia delante y hacia atrás). Los números PID se almacenan en el campo *nr* de la estructura pid incrustada en el descriptor de proceso (por cierto, debido a que el número del grupo de hilos coincide con el PID de su líder, estos números también se almacenan en el campo pid de los descriptores de proceso).
 
-..  figure:: ../images/tablas-hash-pid.png
+..  figure:: ../images/procesos-figura-5-tablas-hash-pid.png
     :align: center
-    :alt: Las tablas hash PID
+    :alt: Figura 5 - Las tablas hash PID
 
-    Las tablas hash PID
+    Figura 5 - Las tablas hash PID
 
 Consideremos la lista por PID del grupo de hilos 4.351: la cabecera de la lista se almacena en el campo *pid_list* del descriptor de proceso incluido en la tabla hash, mientras que los enlaces a los elementos siguiente y anterior de la lista por PID también se almacenan en el campo pid_list de cada elemento de la lista.
 
