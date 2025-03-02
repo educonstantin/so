@@ -22,3 +22,4 @@ Aquí encontrarás todo lo necesario para la asignatura.
    procesos
    interrupciones
    sincronizacion
+   planificacion
