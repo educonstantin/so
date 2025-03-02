@@ -100,11 +100,11 @@ Ahora examinamos cómo se pueden intercalar las rutas de control del núcleo evi
 |Barrera de memoria         |Evita reordenamiento de instrucciones          |CPU Local o todas  |
 |                           |                                               |las CPUs           |
 +---------------------------+-----------------------------------------------+-------------------+
-|Spin Lock                  |Bloqueo con espera ocupada                     |Todas las CPUs     |
+|Spin Lock                  |Candado con espera ocupada                     |Todas las CPUs     |
 +---------------------------+-----------------------------------------------+-------------------+
-|Semáforo                   |Bloqueo con espera bloqueante (duerme)         |Todas las CPUs     |
+|Semáforo                   |Candado con espera bloqueante (duerme)         |Todas las CPUs     |
 +---------------------------+-----------------------------------------------+-------------------+
-|Secklocks                  |Bloqueo basado en un contador de acceso        |Todas las CPUs     |
+|Secklocks                  |Candado basado en un contador de acceso        |Todas las CPUs     |
 +---------------------------+-----------------------------------------------+-------------------+
 |Deshabilitación de         |Prohibe el manejo de interrupciones en una     |CPU Local          |
 |interrupciones locales     |sola CPU                                       |                   |
@@ -185,7 +185,7 @@ Observe que en los sistemas multiprocesador, todas las operaciones atómicas des
 
 Spin Lock
 *********
-Una técnica de sincronización ampliamente utilizada es el *candado*. Cuando una ruta de control del núcleo debe acceder a una estructura de datos compartida o entrar en una región crítica, necesita adquirir un “candado” para ello. Un recurso protegido por un mecanismo de bloqueo es bastante similar a un recurso confinado en una habitación cuya puerta está cerrada con llave cuando alguien está dentro. Si una ruta de control del núcleo desea acceder al recurso, intenta “abrir la puerta” adquiriendo el candado. Solo lo logra si el recurso está libre. Entonces, mientras quiera usar el recurso, la puerta permanece bloqueada. Cuando la ruta de control del núcleo libera el bloqueo, la puerta se desbloquea y otra ruta de control del núcleo puede entrar en la habitación.
+Una técnica de sincronización ampliamente utilizada es el *candado*. Cuando una ruta de control del núcleo debe acceder a una estructura de datos compartida o entrar en una región crítica, necesita adquirir un “candado” para ello. Un recurso protegido por un mecanismo de candado es bastante similar a un recurso confinado en una habitación cuya puerta está cerrada con llave cuando alguien está dentro. Si una ruta de control del núcleo desea acceder al recurso, intenta “abrir la puerta” adquiriendo el candado. Solo lo logra si el recurso está libre. Entonces, mientras quiera usar el recurso, la puerta permanece bloqueada. Cuando la ruta de control del núcleo libera el candado, la puerta se desbloquea y otra ruta de control del núcleo puede entrar en la habitación.
 
 La figura 1 ilustra el uso de candados. Cinco rutas de control del núcleo (P0, P1, P2, P3 y P4) intentan acceder a dos regiones críticas (C1 y C2). La ruta de control del núcleo P0 está dentro de C1, mientras que P2 y P4 esperan para entrar en ella. Al mismo tiempo, P1 está dentro de C2, mientras que P3 espera para entrar en ella. Observe que P0 y P1 podrían ejecutarse simultáneamente. El candado para la región crítica C3 está abierto porque ninguna ruta de control del núcleo necesita entrar en él.
 
@@ -195,7 +195,7 @@ La figura 1 ilustra el uso de candados. Cinco rutas de control del núcleo (P0, 
 
     Figura 1 - Protegiendo regiones críticas con varios candados
 
-Los *candados de giro* o *spin locks* son un tipo especial de candado diseñado para funcionar en un entorno multiprocesador. Si la ruta de control del núcleo encuentra el spin lock *“abierto”*, adquiere el candado y continúa su ejecución. Por el contrario, si la ruta de control del núcleo encuentra el candado *“cerrado”* por una ruta de control del núcleo que se ejecuta en otra CPU, simplemente *“gira”*, ejecutando repetidamente un bucle de instrucciones ajustado, hasta que se libera el bloqueo.
+Los *candados de giro* o *spin locks* son un tipo especial de candado diseñado para funcionar en un entorno multiprocesador. Si la ruta de control del núcleo encuentra el spin lock *“abierto”*, adquiere el candado y continúa su ejecución. Por el contrario, si la ruta de control del núcleo encuentra el candado *“cerrado”* por una ruta de control del núcleo que se ejecuta en otra CPU, simplemente *“gira”*, ejecutando repetidamente un bucle de instrucciones ajustado, hasta que se libera el candado.
 
 El bucle de instrucciones de los spin locks representa una *“espera ocupada”*. La ruta de control del núcleo en espera sigue ejecutándose en la CPU, incluso si no tiene nada que hacer además de perder tiempo. Sin embargo, los spin locks suelen ser convenientes, porque muchos recursos del núcleo están bloqueados durante una fracción de milisegundos solamente; por lo tanto, sería mucho más lento liberar la CPU y volver a adquirirla más tarde.
 
@@ -206,7 +206,7 @@ En Linux, cada spin lock está representado por una estructura *spinlock_t* que 
 *slock*
     Codifica el estado del spin lock: el valor 1 corresponde al estado desbloqueado, mientras que cada valor negativo y 0 denotan el estado bloqueado
 *break_lock*
-    Indicador que señala que un proceso está ocupado esperando el bloqueo (presente solo si el núcleo admite tanto SMP como preempción del núcleo)
+    Indicador que señala que un proceso está ocupado esperando el candado (presente solo si el núcleo admite tanto SMP como preempción del núcleo)
 
 La macro spin_lock con preempción del núcleo
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -250,7 +250,7 @@ Si no se ha seleccionado la opción de preempción (apropiatividad) del núcleo 
        jmp 1b
     3:
 
-La instrucción de lenguaje ensamblador *decb* disminuye el valor del spin lock; la instrucción es atómica porque tiene como prefijo el byte *lock*. A continuación, se realiza una prueba en el indicador de signo. Si está limpio, significa que el spin lock se estableció en 1 (desbloqueado), por lo que la ejecución normal continúa en la etiqueta 3 (el sufijo *f* denota el hecho de que la etiqueta es hacia *"adelante"* (*forward*); aparece en una línea posterior del programa). De lo contrario, se ejecuta el bucle cerrado en la etiqueta 2 (el sufijo *b* denota una etiqueta hacia *"atrás"*) hasta que el spin lock asuma un valor positivo. Luego, la ejecución se reinicia desde la etiqueta 1, ya que no es seguro continuar sin verificar si otro procesador ha tomado el bloqueo.
+La instrucción de lenguaje ensamblador *decb* disminuye el valor del spin lock; la instrucción es atómica porque tiene como prefijo el byte *lock*. A continuación, se realiza una prueba en el indicador de signo. Si está limpio, significa que el spin lock se estableció en 1 (desbloqueado), por lo que la ejecución normal continúa en la etiqueta 3 (el sufijo *f* denota el hecho de que la etiqueta es hacia *"adelante"* (*forward*); aparece en una línea posterior del programa). De lo contrario, se ejecuta el bucle cerrado en la etiqueta 2 (el sufijo *b* denota una etiqueta hacia *"atrás"*) hasta que el spin lock asuma un valor positivo. Luego, la ejecución se reinicia desde la etiqueta 1, ya que no es seguro continuar sin verificar si otro procesador ha tomado el candado.
 
 La macro spin_unlock
 >>>>>>>>>>>>>>>>>>>>
@@ -266,7 +266,7 @@ Spin Locks de Lectura/Escritura
 *******************************
 Los *candados de lectura/escritura* se han introducido para aumentar la cantidad de concurrencia dentro del núcleo. Permiten que varias rutas de control del núcleo lean simultáneamente la misma estructura de datos, siempre que ninguna ruta de control del núcleo la modifique. Si una ruta de control del núcleo desea escribir en la estructura, debe adquirir la versión de escritura del candado de lectura/escritura, que otorga acceso exclusivo al recurso. Por supuesto, permitir lecturas concurrentes en estructuras de datos mejora el rendimiento del sistema.
 
-La figura 2 ilustra dos regiones críticas (C1 y C2) protegidas por bloqueos de lectura/escritura. Las rutas de control del núcleo R0 y R1 están leyendo las estructuras de datos en C1 al mismo tiempo, mientras que W0 está esperando para adquirir el bloqueo para escribir. La ruta de control del núcleo W1 está escribiendo las estructuras de datos en C2, mientras que tanto R2 como W2 están esperando para adquirir el bloqueo para leer y escribir, respectivamente.
+La figura 2 ilustra dos regiones críticas (C1 y C2) protegidas por candados de lectura/escritura. Las rutas de control del núcleo R0 y R1 están leyendo las estructuras de datos en C1 al mismo tiempo, mientras que W0 está esperando para adquirir el bloqueo para escribir. La ruta de control del núcleo W1 está escribiendo las estructuras de datos en C2, mientras que tanto R2 como W2 están esperando para adquirir el bloqueo para leer y escribir, respectivamente.
 
 ..  figure:: ../images/sincronizacion-figura-2-spin-locks-lectura-escritura.png
     :align: center
@@ -283,7 +283,7 @@ Observe que el campo *lock* almacena el número 0x01000000 si el spin lock está
 
 La macro *rwlock_init* inicializa el campo *lock* de un spinlock de lectura/escritura a 0x01000000 (desbloqueado) y el campo *break_lock* a cero.
 
-Obtención y liberación de un bloqueo para lectura
+Obtención y liberación de un candado para lectura
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 La macro *read_lock*, aplicada a la dirección *rwlp* (Read Write Lock Pointer) de un spinlock de lectura/escritura, es similar a la macro *spin_lock* descrita en la sección anterior. Si se seleccionó la opción de preempción del núcleo cuando se compiló el núcleo, la macro realiza las mismas acciones que las de *spin_lock()*, con solo una excepción: para adquirir efectivamente el spinlock de lectura/escritura en el paso 2, la macro ejecuta la función *_raw_read_trylock()*:
 
@@ -334,7 +334,7 @@ Liberar el candado de lectura es bastante simple, porque la macro *read_unlock* 
 
 para disminuir el número de lectores, y luego invoca *preempt_enable()* para volver a habilitar la preempción del núcleo.
 
-Obtener y liberar un bloqueo para escritura
+Obtener y liberar un candado para escritura
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 La macro *write_lock* se implementa de la misma forma que *spin_lock()* y *read_lock()*. Por ejemplo, si se admite la preempción del núcleo, la función deshabilita la preempción del núcleo e intenta tomar el candado de inmediato invocando *_raw_write_trylock()*. Si esta función devuelve 0, el candado ya estaba tomado, por lo que la macro vuelve a habilitar la preempción del núcleo e inicia un bucle de espera ocupado (*busy wait*), como se explicó en la descripción de *spin_lock()* anteriormente.
 
@@ -361,11 +361,94 @@ Una vez más, liberar el candado de escritura es mucho más simple porque la mac
 
 y luego invocar *preempt_enable()*.
 
+Seqlocks
+********
+Cuando se utilizan candados de lectura/escritura, las solicitudes emitidas por las rutas de control del núcleo para realizar un *read_lock* o *write_lock* tienen la misma prioridad: los lectores deben esperar hasta que el escritor haya terminado y, de manera similar, un escritor debe esperar hasta que todos los lectores hayan terminado.
 
+Los *seqlocks* (candados de secuencia) introducidos en Linux 2.6 son similares a los candados de lectura/escritura (spin locks), excepto que dan una prioridad mucho mayor a los escritores: de hecho, se permite que un escritor continúe incluso cuando los lectores están activos. La parte buena de esta estrategia es que un escritor nunca espera (a menos que otro escritor esté activo); la parte mala es que a veces un lector puede verse obligado a leer los mismos datos varias veces hasta que obtenga una copia válida.
 
+Cada *seqlock* es una estructura *seqlock_t* que consta de dos campos: un campo *lock* del tipo *spinlock_t* y un campo entero *sequence*. Este segundo campo desempeña el papel de un contador de secuencia. Cada lector debe leer este contador de secuencia dos veces, antes y después de leer los datos, y verificar si los dos valores coinciden. En el caso opuesto, un nuevo escritor se ha vuelto activo y ha incrementado el contador de secuencia, diciéndole así implícitamente al lector que los datos recién leídos no son válidos.
 
+Una variable *seqlock_t* se inicializa a “desbloqueada” ya sea asignándole el valor SEQLOCK_UNLOCKED, o ejecutando la macro *seqlock_init*. Los escritores adquieren y liberan un *seqlock* invocando *write_seqlock()* y *write_sequnlock()*. La primera función adquiere el spin lock en la estructura de datos *seqlock_t*, luego incrementa el contador de secuencia en uno; la segunda función incrementa el contador de secuencia una vez más, luego libera el spin lock. Esto asegura que cuando el escritor está en medio de la escritura, el contador es impar, y que cuando ningún escritor está alterando datos, el contador es par. Los lectores implementan una región crítica de la siguiente manera:
 
+..  code-block:: c
 
+    unsigned int seq;
+    do {
+        seq = read_seqbegin(&seqlock);
+        /* ... REGION CRITICA ... */
+    } while (read_seqretry(&seqlock, seq));
+
+*read_seqbegin()* devuelve el número de secuencia actual del *seqlock*; *read_seqretry()* retorna 1 si el valor de la variable local *seq* es impar (un escritor estaba actualizando la estructura de datos cuando se invocó la función *read_seqbegin()*), o si el valor de *seq* no coincide con el valor actual del contador de secuencia de *seqlock* (un escritor comenzó a trabajar mientras el lector todavía estaba ejecutando el código en la región crítica).
+
+Observe que cuando un lector ingresa a una región crítica, no necesita deshabilitar la preempción del núcleo; por otro lado, el escritor deshabilita automáticamente la preempción del núcleo cuando ingresa a la región crítica, porque adquiere el spin lock.
+
+No todos los tipos de estructuras de datos pueden protegerse con un *seqlock*. Como regla general, deben cumplirse las siguientes condiciones:
+
+- La estructura de datos a proteger no incluye punteros modificados por los escritores y desreferenciados por los lectores (de lo contrario, un escritor podría cambiar el puntero frente a las narices de los lectores)
+- El código en las regiones críticas de los lectores no tiene efectos secundarios (de lo contrario, múltiples lecturas tendrían diferentes efectos de una sola lectura)
+
+Además, las regiones críticas de los lectores deben ser cortas y los escritores rara vez deben adquirir el *seqlock*, de lo contrario, los accesos de lectura repetidos causarían una sobrecarga severa. Un uso típico de *seqlocks* en Linux 2.6 consiste en proteger algunas estructuras de datos relacionadas con el manejo del tiempo del sistema.
+
+Read-Copy Update (RCU)
+**********************
+*Read-Copy Update (RCU)* (Actualización de Lectura-Copia) es otra técnica de sincronización diseñada para proteger las estructuras de datos a las que acceden principalmente varias CPU para leer. RCU permite que muchos lectores y muchos escritores procedan simultáneamente (una mejora con respecto a los *seqlocks*, que permiten que sólo proceda un escritor). Además, RCU no tiene bloqueos, es decir, no utiliza ningún candado o contador compartido por todas las CPU; esto es una gran ventaja con respecto a los spinlocks de lectura/escritura y los seqlocks, que tienen una gran sobrecarga debido al esnifeo (snooping) de las líneas de caché y la invalidación.
+
+¿Cómo obtiene RCU el sorprendente resultado de sincronizar varias CPU sin estructuras de datos compartidas? La idea clave consiste en limitar el alcance de RCU de la siguiente manera:
+1. Sólo las estructuras de datos que se asignan dinámicamente y se referencian por medio de punteros pueden ser protegidas por RCU.
+2. Ninguna ruta de control del núcleo puede permanecer inactiva dentro de una región crítica protegida por RCU.
+
+Cuando una ruta de control del núcleo quiere leer una estructura de datos protegida por RCU, ejecuta la macro *rcu_read_lock()*, que es equivalente a *preempt_disable()*. A continuación, el lector desreferencia el puntero a la estructura de datos y comienza a leerla. Como se indicó anteriormente, el lector no puede dormir hasta que termine de leer la estructura de datos; el final de la región crítica está marcado por la macro *rcu_read_unlock()*, que es equivalente a *preempt_enable()*.
+
+Debido a que el lector hace muy poco para evitar las condiciones de carrera, podríamos esperar que el escritor tenga que trabajar un poco más. De hecho, cuando un escritor quiere actualizar la estructura de datos, desreferencia el puntero y hace una copia de toda la estructura de datos. A continuación, el escritor modifica la copia. Una vez terminado, el escritor cambia el puntero a la estructura de datos para que apunte a la copia actualizada. Debido a que cambiar el valor del puntero es una operación atómica, cada lector o escritor ve la copia antigua o la nueva: no puede ocurrir corrupción en la estructura de datos. Sin embargo, se requiere una barrera de memoria para asegurar que el puntero actualizado sea visto por las otras CPUs solo después de que la estructura de datos haya sido modificada. Tal barrera de memoria se introduce implícitamente si un spin lock se acopla con RCU para prohibir la ejecución concurrente de escritores.
+
+El problema real con la técnica RCU, sin embargo, es que la copia antigua de la estructura de datos no se puede liberar de inmediato cuando el escritor actualiza el puntero. De hecho, los lectores que estaban accediendo a la estructura de datos cuando el escritor comenzó su actualización aún podrían estar leyendo la copia antigua. La copia antigua se puede liberar solo después de que todos los lectores (potenciales) en las CPU hayan ejecutado la macro *rcu_read_unlock()*.
+
+RCU es una nueva incorporación en Linux 2.6; Se utiliza en la capa de red y en el sistema de archivos virtual.
+
+Semáforos
+*********
+Ya hemos introducido los semáforos anteriormente. Esencialmente, implementan una primitiva de bloqueo que permite dormir a los procesos que esperan hasta que el recurso deseado se libere.
+
+En realidad, Linux ofrece dos tipos de semáforos:
+- Semáforos de kernel, que son utilizados por las rutas de control de kernel
+- Semáforos IPC de System V, que son utilizados por los procesos de modo usuario
+
+Ahora nos centramos en los semáforos de kernel, mientras que los semáforos IPC se describen mas adelante. Un semáforo de kernel es similar a un spin lock, en el sentido de que no permite que una ruta de control de kernel proceda a menos que el candado esté abierto. Sin embargo, siempre que una ruta de control de kernel intenta adquirir un recurso ocupado protegido por un semáforo de kernel, el proceso correspondiente se suspende. Se vuelve ejecutable nuevamente cuando se libera el recurso. Por lo tanto, los semáforos de kernel solo pueden ser adquiridos por funciones a las que se les permite dormir; los manejadores de interrupciones y las funciones diferibles no pueden usarlos.
+
+Un semáforo de kernel es un objeto de tipo *struct semaphore*, que contiene los campos que se muestran en la siguiente lista.
+
+*count*
+ Almacena un valor *atomic_t*. Si es mayor que 0, el recurso está libre, es decir, está disponible actualmente. Si *count* es igual a 0, el semáforo está ocupado pero ningún otro proceso está esperando el recurso protegido. Finalmente, si *count* es negativo, el recurso no está disponible y al menos un proceso lo está esperando.
+*wait*
+ Almacena la dirección de una lista de cola de espera que incluye todos los procesos inactivos que están actualmente esperando el recurso. Por supuesto, si *count* es mayor o igual a 0, la cola de espera está vacía.
+*sleepers*
+ Almacena un indicador que indica si algunos procesos están inactivos en el semáforo. Las funciones init_MUTEX() e init_MUTEX_LOCKED() pueden utilizarse para inicializar un semáforo para acceso exclusivo: establecen el campo count en 1 (recurso libre con acceso exclusivo) y 0 (recurso ocupado con acceso exclusivo actualmente otorgado al proceso que inicializa el semáforo), respectivamente. Tenga en cuenta que un semáforo también podría inicializarse con un valor positivo arbitrario *n* para *count*. En este caso, se permite que como máximo *n* procesos accedan al recurso de forma concurrente.
+
+Obtención y liberación de semáforos
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Empecemos por analizar cómo liberar un semáforo, lo cual es mucho más sencillo que obtener uno. Cuando un proceso desea liberar un bloqueo de semáforo del núcleo, invoca la función *up()*. La función *up()* aumenta el campo *count* del semáforo * *sem* y luego verifica si su valor es mayor que 0. El incremento de count y el seteo de *flag* por la siguiente instrucción deben ejecutarse atómicamente, o de lo contrario otra ruta de control del núcleo podría acceder simultáneamente al valor del campo, con resultados desastrosos. Si count es mayor que 0, no había ningún proceso durmiendo en la cola de espera, por lo que no se debe hacer nada. De lo contrario, se invoca la función *up()* para que se despierte un proceso dormido.
+
+Por el contrario, cuando un proceso desea adquirir un candado de un semáforo de núcleo, invoca la función *down()*. La función *down()* disminuye el campo *count* del semáforo * *sem* y luego verifica si su valor es negativo. Nuevamente, la disminución y la prueba deben ejecutarse atómicamente. Si count es mayor o igual a 0, el proceso actual adquiere el recurso y la ejecución continúa normalmente. De lo contrario, count es negativo y el proceso actual debe suspenderse. Esencialmente, la función *down()* cambia el estado del proceso actual de TASK_RUNNING a TASK_UNINTERRUPTIBLE y coloca el proceso en la cola de espera del semáforo.
+
+Semáforos de Lectura/Escritura
+******************************
+Los semáforos de lectura/escritura son similares a los spin locks de lectura/escritura descritos anteriormente, excepto que los procesos en espera se suspenden en lugar de girar hasta que el semáforo se abre nuevamente.
+
+Muchas rutas de control del núcleo pueden adquirir simultáneamente un semáforo de lectura/escritura para lectura; sin embargo, cada ruta de control del núcleo de escritor debe tener acceso exclusivo al recurso protegido. Por lo tanto, el semáforo puede adquirirse para escritura solo si ninguna otra ruta de control del núcleo lo mantiene para acceso de lectura o escritura. Los semáforos de lectura/escritura mejoran la cantidad de concurrencia dentro del núcleo y mejoran el rendimiento general del sistema.
+
+El núcleo maneja todos los procesos que esperan un semáforo de lectura/escritura en estricto orden FIFO. Cada lector o escritor que encuentra el semáforo cerrado se inserta en la última posición de la lista de cola de espera del semáforo. Cuando se libera el semáforo, se verifica el proceso en la primera posición de la lista de cola de espera. El primer proceso siempre se despierta. Si es un escritor, los otros procesos en la cola de espera continúan durmiendo. Si es un lector, todos los lectores al comienzo de la cola, hasta el primer escritor, también se despiertan y obtienen el candado. Sin embargo, los lectores que han sido puestos en cola después de un escritor continúan durmiendo.
+
+Cada semáforo de lectura/escritura se describe mediante una estructura *rw_semaphore* que incluye los siguientes campos:
+
+count
+ Almacena dos contadores de 16 bits. El contador en la palabra más significativa codifica en forma de complemento a dos la suma del número de escritores que no esperan (ya sea 0 o 1) y el número de rutas de control del núcleo en espera. El contador en la palabra menos significativa codifica el número total de lectores y escritores que no esperan.
+wait_list
+ Apunta a una lista de procesos en espera. Cada elemento en esta lista es una estructura *rwsem_waiter*, que incluye un puntero al descriptor del proceso dormido y un indicador que indica si el proceso desea el semáforo para leer o para escribir.
+wait_lock
+ Un spin lock utilizado para proteger la lista de cola de espera y la estructura *rw_semaphore* en sí.
+
+La función *init_rwsem()* inicializa una estructura *rw_semaphore* estableciendo el campo *count* en 0, el spin lock *wait_lock* en *unlocked* y *wait_list* en la lista vacía. Las funciones *down_read()* y *down_write()* adquieren el semáforo de lectura/escritura para leer y escribir, respectivamente. De manera similar, las funciones *up_read()* y *up_write()* liberan un semáforo de lectura/escritura adquirido previamente para leer y escribir. Las funciones *down_read_trylock()* y *down_write_trylock()* son similares a *down_read()* y *down_write()*, respectivamente, pero no bloquean el proceso si el semáforo está ocupado.
 
 
 
