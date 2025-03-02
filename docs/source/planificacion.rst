@@ -374,11 +374,36 @@ Cada dominio de planificación está representado por un descriptor *sched_domai
 
 Los descriptores *sched_domain* de todas las CPUs físicas en el sistema se almacenan en la variable por CPU *phys_domains*. Si el núcleo no admite la tecnología de hyper-threading, estos dominios se encuentran en el nivel inferior de la jerarquía de dominios y los campos *sd* de los descriptores de la runqueue apuntan a ellos; es decir, son los dominios de planificación base. Por el contrario, si el núcleo admite la tecnología de hyper-threading, los dominios de planificación de nivel inferior se almacenan en la variable por CPU *cpu_domains*.
 
-Balanceo de carga
-*****************
+Función rebalance_tick()
+************************
+Para mantener equilibradas las runqueues del sistema, *scheduler_tick()* invoca la función *rebalance_tick()* una vez por tick. Recibe como parámetros el índice *this_cpu* de la CPU local, la dirección *this_rq* de la runqueue local y un indicador, *idle*, que puede asumir los siguientes valores:
+SCHED_IDLE
+ La CPU está inactiva actualmente, es decir, *current* es el proceso de intercambio.
+NOT_IDLE
+ La CPU no está inactiva actualmente, es decir, *current* no es el proceso de intercambio.
 
+La función *rebalance_tick()* determina primero el número de procesos en la cola de ejecución y actualiza la carga de trabajo promedio de la runqueue; para ello, la función accede a los campos *nr_running* y *cpu_load* del descriptor de la runqueue.
 
+A continuación, *rebalance_tick()* inicia un bucle sobre todos los dominios de planificación en la ruta desde el dominio base (al que hace referencia el campo *sd* del descriptor de la runqueue local) hasta el dominio de nivel superior. En cada iteración, la función determina si ha llegado el momento de invocar la función *load_balance()*, ejecutando así una operación de reequilibrio en el dominio de planificación. El valor de *idle* y algunos parámetros almacenados en el descriptor de dominio *sched_domain* determinan la frecuencia de las invocaciones de *load_balance()*. Si *idle* es igual a SCHED_IDLE, entonces la cola de ejecución está vacía y *rebalance_tick()* invoca *load_balance()* con bastante frecuencia (aproximadamente una vez cada uno o dos ticks para los dominios de planificación correspondientes a CPU lógicas y físicas). Por el contrario, si *idle* es igual a NOT_IDLE, *rebalance_tick()* invoca *load_balance()* con moderación (aproximadamente una vez cada 10 milisegundos para los dominios de planificación correspondientes a CPU lógicas y una vez cada 100 milisegundos para los dominios de planificación correspondientes a CPU físicas).
 
+Función load_balance()
+**********************
+La función *load_balance()* verifica si un dominio de planificación está significativamente desequilibrado; más precisamente, verifica si el desequilibrio se puede reducir moviendo algunos procesos del grupo más ocupado a la runqueue de la CPU local. Si es así, la función intenta esta migración. Recibe cuatro parámetros:
+
+*this_cpu*
+ El índice de la CPU local
+*this_rq*
+ La dirección del descriptor de la runqueue local
+*sd*
+ Apunta al descriptor del dominio de planificación que se va a verificar
+*idle*
+ SCHED_IDLE (la CPU local está inactiva) o NOT_IDLE
+
+Función move_tasks()
+********************
+La función *move_tasks()* mueve procesos desde una runqueue de origen a la runqueue local. Recibe seis parámetros: *this_rq* y *this_cpu* (el descriptor de la runqueue local y el índice de CPU local), *busiest* (el descriptor de la runqueue de origen), *max_nr_move* (el número máximo de procesos a mover), *sd* (la dirección del descriptor de dominio de planificación en el que se lleva a cabo esta operación de balanceo) y el indicador *idle* (además de SCHED_IDLE y NOT_IDLE, este indicador también se puede establecer en NEWLY_IDLE cuando la función se invoca indirectamente mediante *idle_balance()*. La función analiza primero los procesos expirados de la runqueue más ocupada, comenzando por los de mayor prioridad. Cuando se han escaneado todos los procesos expirados, la función escanea los procesos activos de la runqueue más ocupada. Para cada proceso candidato, la función invoca *can_migrate_task()*.
+
+Si *can_migrate_task()* devuelve el valor 1, *move_tasks()* invoca la función *pull_task()* para mover el proceso candidato a la runqueue local. Básicamente, *pull_task()* ejecuta *dequeue_task()* para eliminar el proceso de la runqueue remota, luego ejecuta *enqueue_task()* para insertar el proceso en la runqueue local y, finalmente, si el proceso que se acaba de mover tiene una prioridad dinámica más alta que la actual, invoca *resched_task()* para interrumpir el proceso actual de la CPU local.
 
 
 
