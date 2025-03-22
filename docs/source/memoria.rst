@@ -1,5 +1,5 @@
-Memoria
-=======
+Direccionamiento de Memoria
+===========================
 Trataremos las técnicas de direccionamiento. Afortunadamente, un sistema operativo no está obligado a realizar un seguimiento de la memoria física por sí mismo; Los microprocesadores actuales incluyen varios circuitos de hardware para hacer que la gestión de la memoria sea más eficiente y robusta, de modo que los errores de programación no puedan causar accesos indebidos a la memoria fuera del programa.
 
 Veremos los detalles sobre cómo los microprocesadores 80x86 direccionan memoria y cómo Linux usa los circuitos de direccionamiento disponibles.
@@ -554,20 +554,20 @@ Como veremos más adelante, cada proceso tiene su propio Directorio Global de P�
 Distribución de memoria física
 ******************************
 
-Durante la fase de inicialización, el kernel debe crear un mapa de direcciones físicas que especifique qué rangos de direcciones físicas son utilizables por él mismo y cuáles no están disponibles (ya sea porque asignan la memoria compartida de E/S de los dispositivos de hardware o porque los marcos de página correspondientes contienen datos del BIOS).
+Durante la fase de inicialización, el kernel debe crear un mapa de direcciones físicas que especifique qué rangos de direcciones físicas son utilizables por el kernel y cuáles no están disponibles (ya sea porque asignan la memoria compartida de E/S de los dispositivos de hardware o porque los marcos de página correspondientes contienen datos del BIOS).
 
 El kernel considera reservados los siguientes marcos de página:
 
 - Aquellos que se encuentran en los rangos de direcciones físicas no disponibles
-- Aquellos que contienen el código del kernel y estructuras de datos inicializadas.
+- Aquellos que contienen el código y estructuras de datos inicializadas del kernel.
 
-Una página contenida en un marco de página reservado nunca puede asignarse ni intercambiarse dinámicamente al disco.
+Una página contenida en un marco de página reservado nunca puede asignarse ni intercambiarse (swapping) dinámicamente al disco.
 
 Por regla general, el kernel de Linux se instala en la RAM a partir de la dirección física 0x00100000, es decir, a partir del segundo megabyte. El número total de marcos de página necesarios depende de cómo esté configurado el kernel. Una configuración típica produce un kernel que se puede cargar en menos de 3 MB de RAM.
 
 ¿Por qué no se carga el kernel comenzando con el primer megabyte de RAM disponible? Bueno, la arquitectura de la PC tiene varias peculiaridades que hay que tener en cuenta. Por ejemplo:
 
-- El BIOS utiliza el marco de página 0 para almacenar la configuración de hardware del sistema detectada durante la autoprueba de encendido (POST); Además, la BIOS de muchos portátiles escribe datos en este marco de página incluso después de inicializar el sistema.
+- El BIOS utiliza el marco de página 0 para almacenar la configuración de hardware del sistema detectada durante la autoprueba de encendido (POST - Power-On Self-Test); Además, la BIOS de muchos portátiles escribe datos en este marco de página incluso después de inicializar el sistema.
 - Las direcciones físicas que van desde 0x000a0000 a 0x000fffff generalmente se reservan para rutinas de BIOS y para asignar la memoria interna de las tarjetas gráficas ISA. Esta zona es el conocido hueco de 640 KB a 1 MB en todos los PC compatibles con IBM: las direcciones físicas existen pero están reservadas y el sistema operativo no puede utilizar los marcos de página correspondientes.
 - Modelos de computadora específicos pueden reservar marcos de página adicionales dentro del primer megabyte. Por ejemplo, IBM ThinkPad asigna el marco de página 0xa0 al 0x9f.
 
@@ -602,3 +602,91 @@ El símbolo *\_text*, que corresponde a la dirección física 0x00100000, indica
     :alt: Figura 13 - Los primeros 768 marcos de página en Linux 2.6
 
     Figura 13 - Los primeros 768 marcos de página en Linux 2.6
+
+Tabla de Paginas de Procesos
+****************************
+El espacio de direcciones lineales de un proceso se divide en dos partes:
+
+- Las direcciones lineales de 0x00000000 a 0xbfffffff se pueden direccionar cuando el proceso se ejecuta en modo de usuario o de núcleo.
+- Las direcciones lineales de 0xc0000000 a 0xffffffff solo se pueden direccionar cuando el proceso se ejecuta en modo de núcleo.
+
+Cuando un proceso se ejecuta en modo de usuario, emite direcciones lineales menores que 0xc0000000; cuando se ejecuta en modo de núcleo, está ejecutando código de núcleo y las direcciones lineales emitidas son mayores o iguales que 0xc0000000. Sin embargo, en algunos casos, el núcleo debe acceder al espacio de direcciones lineales del modo de usuario para recuperar o almacenar datos.
+
+La macro PAGE_OFFSET produce el valor 0xc0000000; este es el desplazamiento en el espacio de direcciones lineales de un proceso donde reside el núcleo. En este libro, a menudo nos referimos directamente al número 0xc0000000.
+
+El contenido de las primeras entradas del Directorio Global de Páginas que asignan direcciones lineales inferiores a 0xc0000000 (las primeras 768 entradas con PAE deshabilitado o las primeras 3 entradas con PAE habilitado) depende del proceso específico. Por el contrario, las entradas restantes deben ser las mismas para todos los procesos e iguales a las entradas correspondientes del Directorio Global de Páginas del kernel maestro (véase la sección siguiente).
+
+Tabla de Paginas del Kernel
+***************************
+El núcleo mantiene un conjunto de tablas de páginas para su propio uso, con raíz en el denominado *Directorio Global de Páginas maestro del núcleo*. Luego de la inicialización del sistema, este conjunto de tablas de páginas nunca es utilizado directamente por ningún proceso ni hilo del núcleo; en su lugar, las entradas más altas del Directorio Global de Páginas maestro del núcleo constituyen el modelo de referencia para las entradas correspondientes de los Directorios Globales de Páginas de cada proceso regular del sistema.
+
+A continuación, describimos cómo el núcleo inicializa sus propias tablas de páginas. Esta actividad consta de dos fases. De hecho, justo después de cargar la imagen del núcleo en memoria, la CPU sigue funcionando en modo real; por lo tanto, la paginación no está habilitada.
+
+En la primera fase, el núcleo crea un espacio de direcciones limitado que incluye el código y los segmentos de datos del núcleo, las Tablas de Páginas iniciales y 128 KB para algunas estructuras de datos dinámicas. Este espacio de direcciones mínimo es lo suficientemente grande como para instalar el núcleo en la RAM e inicializar sus estructuras de datos principales.
+
+En la segunda fase, el núcleo aprovecha toda la RAM existente y configura las tablas de páginas correctamente. Examinemos cómo se ejecuta este plan.
+
+Tablas de Pagina temporales del kernel
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Un Directorio Global de Páginas temporal se inicializa estáticamente durante la compilación del núcleo, mientras que las Tablas de Páginas temporales se inicializan mediante la función de lenguaje ensamblador startup_32(). No nos molestaremos más en mencionar los Directorios Superiores de Páginas ni los Directorios Intermedios de Páginas, porque se equiparan a las entradas del Directorio Global de Páginas. El soporte de PAE no está habilitado en esta etapa.
+
+El Directorio Global de Páginas temporal está contenido en la variable *swapper_pg_dir*. Las Tablas de Páginas temporales se almacenan comenzando desde *pg0*, justo después del final de los segmentos de datos no inicializados del núcleo (símbolo *_end* en la Figura 13). Para simplificar, supongamos que los segmentos del núcleo, las Tablas de Páginas temporales y el área de memoria de 128 KB caben en los primeros 8 MB de RAM. Para mapear 8 MB de RAM, se requieren dos Tablas de Páginas. Recordemos que usamos 10 bits para direccionar las entradas de cada tabla de página (2\ :sup:`10`), por lo tanto podremos referenciar a 1024 entradas. Si a eso le agregamos que cada página posee 4096 bytes de tamaño, entonces nos da un total de 4 MB por tabla.
+
+El objetivo de esta primera fase de paginación es permitir que estos 8 MB de RAM se direccionen fácilmente tanto en modo real como en modo protegido. Por lo tanto, el núcleo debe crear un mapeo desde las direcciones lineales 0x00000000 a 0x007fffff y las direcciones lineales 0xc0000000 a 0xc07fffff en las direcciones físicas 0x00000000 a 0x007fffff. En otras palabras, el núcleo durante su primera fase de inicialización puede direccionar los primeros 8 MB de RAM ya sea por direcciones lineales idénticas a las físicas o por 8 MB de direcciones lineales, comenzando desde 0xc0000000.
+
+El núcleo crea el mapeo deseado llenando todas las entradas de *swapper_pg_dir* con ceros, excepto las entradas 0, 1, 0x300 (decimal 768) y 0x301 (decimal 769); las dos últimas entradas abarcan todas las direcciones lineales entre 0xc0000000 y 0xc07fffff. Las entradas 0, 1, 0x300 y 0x301 se inicializan de la siguiente manera:
+
+- El campo de dirección de las entradas 0 y 0x300 se establece en la dirección física de *pg0*, mientras que el campo de dirección de las entradas 1 y 0x301 se establece en la dirección física del marco de página posterior a *pg0*.
+- Los indicadores Presente, Lectura/Escritura y Usuario/Supervisor se establecen en las cuatro entradas.
+- Los indicadores Accedido, Sucio, PCD, PWD y Tamaño de página se borran en las cuatro entradas.
+
+La función de lenguaje ensamblador *startup_32()* también habilita la unidad de paginación. Esto se logra cargando la dirección física de *swapper_pg_dir* en el registro de control *cr3* y estableciendo el indicador *PG* del registro de control *cr0*, como se muestra en el siguiente fragmento de código equivalente:
+
+.. code-block:: asm
+
+    movl $swapper_pg_dir-0xc0000000,%eax
+    movl %eax,%cr3 /* establece el puntero a la tabla de pagina.. */
+    movl %cr0,%eax
+    orl $0x80000000,%eax
+    movl %eax,%cr0 /* ..y establece el bit (PG) de paginacion */
+
+Direcciones Lineales de Mapeo Fijo
+**********************************
+Vimos que la parte inicial del cuarto gigabyte de direcciones lineales del kernel asigna la memoria física del sistema. Sin embargo, siempre quedan disponibles al menos 128 MB de direcciones lineales porque el kernel las usa para implementar la asignación de memoria no contigua y direcciones lineales de mapeo fijo.
+
+La asignación de memoria no contigua es simplemente una forma especial de asignar y liberar páginas de memoria de forma dinámica, y se describe en la sección “Direcciones lineales de áreas de memoria no contiguas” del Capítulo 8. En esta sección, nos centramos en las direcciones lineales de mapeo fijo.
+
+Básicamente, una *dirección lineal de mapeo fijo* es una dirección lineal constante como 0xffffc000 cuya dirección física correspondiente no tiene que ser la dirección lineal menos 0xc000000, sino una dirección física establecida de forma arbitraria. Por lo tanto, cada dirección lineal de mapeo fijo asigna un marco de página de la memoria física. Como veremos en capítulos posteriores, el kernel usa direcciones lineales de mapeo fijo en lugar de variables de puntero que nunca cambian su valor.
+
+Las direcciones lineales de mapeo fijo son conceptualmente similares a las direcciones lineales que mapean los primeros 896 MB de RAM. Sin embargo, una dirección lineal de mapeo fijo puede mapear cualquier dirección física, mientras que el mapeo establecido por las direcciones lineales en la porción inicial del cuarto gigabyte es lineal (la dirección lineal X mapea la dirección física X –PAGE_OFFSET).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
