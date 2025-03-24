@@ -1,7 +1,7 @@
 Introducción
 ============
 
-`Ver Slides <HTML/intro-slides.html>`_
+`Ver Slides <html/intro-slides.html>`_
 
 Conceptos básicos de Sistemas Operativos
 ----------------------------------------
