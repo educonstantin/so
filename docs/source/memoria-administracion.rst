@@ -431,11 +431,11 @@ Cada objeto tiene un descriptor corto de tipo *kmem_bufctl_t*. Los descriptores 
 
     Figura 5 - Relacion entre descriptores de slabs y descriptores de objetos
 
-Administración de Area de Memoria No Contigua
+Administración de Areas de Memoria No Contigua
 ---------------------------------------------
 Ya sabemos que es preferible mapear áreas de memoria en conjuntos de marcos de página contiguos, haciendo así un mejor uso de la caché y logrando tiempos de acceso a memoria promedio más bajos. Sin embargo, si las solicitudes de áreas de memoria son poco frecuentes, tiene sentido considerar un esquema de asignación basado en marcos de página no contiguos a los que se accede a través de direcciones lineales contiguas. La principal ventaja de este esquema es evitar la fragmentación externa, mientras que la desventaja es que es necesario manipular las tablas de páginas del núcleo. Claramente, el tamaño de un área de memoria no contigua debe ser un múltiplo de 4096. Linux usa áreas de memoria no contiguas de varias maneras; por ejemplo, para asignar estructuras de datos para áreas de intercambio activas, para asignar espacio para un módulo o para asignar búferes a algunos controladores de E/S. Además, las áreas de memoria no contiguas proporcionan otra forma de utilizar marcos de página de memoria alta.
 
-Direcciones lineales de áreas de memoria no contiguas
+Direcciones lineales de Áreas de Memoria no contiguas
 *****************************************************
 Para encontrar un rango libre de direcciones lineales, podemos buscar en el área que comienza en PAGE_OFFSET (normalmente 0xc0000000, el comienzo del cuarto gigabyte). La figura 6 muestra cómo se utilizan las direcciones lineales de cuarto gigabyte:
 
@@ -450,5 +450,5 @@ Para encontrar un rango libre de direcciones lineales, podemos buscar en el áre
 
     Figura 6 - Intervalo de dirección lineal iniciando desde PAGE_OFFSET
 
-Descriptor de areas de memoria no contiguos
+Descriptor de areas de memoria no contiguas
 *******************************************
