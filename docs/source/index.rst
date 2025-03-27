@@ -23,3 +23,4 @@ Aquí encontrarás todo lo necesario para la asignatura.
    interrupciones
    sincronizacion
    planificacion
+   memoria-administracion
