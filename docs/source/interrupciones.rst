@@ -3,51 +3,50 @@ Interrupciones y Excepciones
 
 Una *interrupción* se define generalmente como un evento que altera la secuencia de instrucciones ejecutadas por un procesador. Dichos eventos corresponden a señales eléctricas generadas por circuitos de hardware tanto dentro como fuera del chip de la CPU.
 
-Las interrupciones a menudo se dividen en interrupciones *sincrónicas* y *asincrónicas*:
+Las interrupciones a menudo se dividen en +*sincrónicas* y *asincrónicas*:
 
 - Las interrupciones *sincrónicas* son producidas por la unidad de control de la CPU mientras ejecuta instrucciones y se denominan sincrónicas porque la unidad de control las emite solo después de terminar la ejecución de una instrucción.
-- Las interrupciones *asincrónicas* son generadas por otros dispositivos de hardware en momentos arbitrarios con respecto a las señales de reloj de la CPU.
+- Las interrupciones *asincrónicas* son generadas por otros dispositivos de hardware en momentos arbitrarios con respecto a las señales del reloj de la CPU.
 
-Los manuales de microprocesadores Intel designan las interrupciones sincrónicas y asincrónicas como *excepciones* e *interrupciones*, respectivamente. Adoptaremos esta clasificación, aunque ocasionalmente usaremos el término "señal de interrupción" para designar ambos tipos juntos (sincrónicos y asincrónicos).
+Intel denomina a las interrupciones sincrónicas y asincrónicas como *excepciones* e *interrupciones*, respectivamente. Adoptaremos esta clasificación, aunque ocasionalmente usaremos el término "señal de interrupción" para designar ambos tipos juntos (sincrónicos y asincrónicos).
 
 Las interrupciones son emitidas por temporizadores de intervalos y dispositivos de E/S; por ejemplo, la pulsación de una tecla del teclado por parte de un usuario activa una interrupción.
 
-Las excepciones, por otra parte, son causadas por errores de programación o por condiciones anómalas que deben ser manejadas por el núcleo. En el primer caso, el núcleo maneja la excepción entregando al proceso actual una de las señales familiares para cualquier programador de Unix. En el segundo caso, el núcleo realiza todos los pasos necesarios para recuperarse de la condición anómala, como un fallo de página o una solicitud (a través de una instrucción en lenguaje ensamblador como *int* o *sysenter*) para un servicio del núcleo.
+Las excepciones, por otra parte, son causadas por errores de programación o por condiciones anómalas que deben ser manejadas por el núcleo. En el primer caso, el núcleo maneja la excepción entregando al proceso actual una de las señales conocidas por cualquier programador de Unix. En el segundo caso, el núcleo realiza todos los pasos necesarios para recuperarse de la condición anómala, como un fallo de página o una solicitud (a través de una instrucción en lenguaje ensamblador como *int* o *sysenter*) para un servicio del núcleo (llamada al sistema).
 
-Comenzamos describiendo la motivación para introducir tales señales. Luego veremos cómo las conocidas IRQ (Interrupt Requests) emitidas por los dispositivos de E/S dan lugar a interrupciones, y detallamos cómo los procesadores 80×86 manejan interrupciones y excepciones a nivel de hardware. Luego ilustramos, cómo Linux inicializa todas las estructuras de datos requeridas por la arquitectura de interrupciones 80×86. Las tres secciones restantes describen cómo maneja Linux las señales de interrupción a nivel de software.
-
-Una advertencia antes de continuar: solo cubrimos las interrupciones “clásicas” comunes a todos los PC; no cubrimos las interrupciones no estándar de algunas arquitecturas.
+Antes de continuar: solo cubrimos las interrupciones “clásicas” comunes a todos los PC; no cubrimos las interrupciones no estándar de algunas arquitecturas.
 
 El rol de las señales de interrupción
 -------------------------------------
-Como sugiere el nombre, las señales de interrupción proporcionan una forma de desviar el procesador hacia un código que está fuera del flujo de control normal. Cuando llega una señal de interrupción, la CPU debe detener lo que está haciendo en ese momento y cambiar a una nueva actividad; lo hace guardando el valor actual del contador de programa (es decir, el contenido de los registros eip y cs) en la pila del kernel y colocando una dirección relacionada con el tipo de interrupción en el contador de programa.
+Como sugiere el nombre, las señales de interrupción proporcionan una forma de desviar el procesador hacia un código que está fuera del flujo de control normal. Cuando llega una señal de interrupción, la CPU debe detener lo que está haciendo en ese momento y cambiar a una nueva actividad; lo hace guardando el valor actual del contador de programa (es decir, el contenido de los registros *eip* y *cs*) en la pila del kernel y colocando una dirección relacionada con el tipo de interrupción en el contador de programa.
 
-Hay algunas cosas le recordarán el cambio de contexto descrito, que se lleva a cabo cuando un kernel sustituye un proceso por otro. Pero hay una diferencia clave entre el manejo de interrupciones y el cambio de proceso: el código ejecutado por una interrupción o por un manejador de excepciones no es un proceso. Más bien, es un *camino de control del kernel* que se ejecuta en nombre del mismo proceso que se estaba ejecutando cuando ocurrió la interrupción. Como camino de control del núcleo, el manejador de interrupciones es más ligero que un proceso (tiene menos contexto y requiere menos tiempo para configurarlo o desmantelarlo).
+Algunas cosas te recordarán el cambio de contexto descrito, que se lleva a cabo cuando un kernel sustituye un proceso por otro. Pero hay una diferencia clave entre el manejo de interrupciones y el cambio de proceso: el código ejecutado por una interrupción o por un manejador de excepciones no es un proceso. Más bien, es un *camino de control del kernel* que se ejecuta en nombre del mismo proceso que se estaba ejecutando cuando ocurrió la interrupción. Como camino de control del núcleo, el manejador de interrupciones es más ligero que un proceso (tiene menos contexto y requiere menos tiempo para configurarlo o desmantelarlo).
 
 El manejo de interrupciones es una de las tareas más sensibles que realiza el núcleo, porque debe satisfacer las siguientes restricciones:
 
-- Las interrupciones pueden aparecer en cualquier momento, cuando el núcleo puede querer terminar algo más que estaba tratando de hacer. El objetivo del núcleo es, por lo tanto, atender la interrupción lo antes posible y diferir tanto procesamiento como sea posible. Por ejemplo, supongamos que un bloque de datos ha llegado a una línea de red. Cuando el hardware interrumpe el núcleo, podría simplemente marcar la presencia de datos, regresar al procesador a lo que estaba ejecutándose antes y hacer el resto del procesamiento más tarde (como mover los datos a un búfer donde su proceso receptor pueda encontrarlos y luego reiniciar el proceso). Las actividades que el núcleo necesita realizar en respuesta a una interrupción se dividen así en una parte crítica urgente que el núcleo ejecuta de inmediato y una parte diferible que se deja para más tarde.
-- Debido a que las interrupciones pueden venir en cualquier momento, el núcleo puede estar manejando una de ellas mientras ocurre otra (de un tipo diferente). Esto debe permitirse tanto como sea posible, porque mantiene ocupados los dispositivos de E/S. Como resultado, los manejadores de interrupciones deben estar codificados de modo que los hilos del núcleo correspondientes puedan ejecutarse de manera anidada. Cuando termina el último hilo del núcleo, el núcleo debe poder reanudar la ejecución del proceso interrumpido o cambiar a otro proceso si la señal de interrupción ha causado una actividad de replanificación.
+- Las interrupciones pueden aparecer en cualquier momento, cuando el núcleo puede estar finalizando algo más que estaba tratando de hacer. El objetivo del núcleo es, por lo tanto, atender la interrupción lo antes posible y diferir tanto procesamiento como sea posible. Por ejemplo, supongamos que un bloque de datos ha llegado a una línea de red. Cuando el hardware interrumpe el núcleo, podría simplemente marcar la presencia de datos, regresar al procesador a lo que estaba ejecutándose antes y hacer el resto del procesamiento más tarde (como mover los datos a un búfer donde su proceso receptor pueda encontrarlos y luego reiniciar el proceso). Las actividades que el núcleo necesita realizar en respuesta a una interrupción se dividen así en una parte crítica *urgente* que el núcleo ejecuta de inmediato y una parte *diferible* que se deja para más tarde.
+- Debido a que las interrupciones pueden venir en cualquier momento, el núcleo puede estar manejando una de ellas mientras ocurre otra (de un tipo diferente). Esto debe permitirse tanto como sea posible, porque mantiene ocupados los dispositivos de E/S. Como resultado, los manejadores de interrupciones deben estar codificados de modo que los hilos del núcleo correspondientes puedan ejecutarse de manera anidada. Cuando termina el último hilo del núcleo, el núcleo debe poder reanudar la ejecución del proceso interrumpido o cambiar a otro proceso si la señal de interrupción ha causado una actividad de replanificación (*schedule*).
 - Aunque el núcleo puede aceptar una nueva señal de interrupción mientras maneja una anterior, existen algunas regiones críticas dentro del código del núcleo donde las interrupciones deben estar deshabilitadas. Dichas regiones críticas deben limitarse tanto como sea posible porque, de acuerdo con el requisito anterior, el núcleo, y particularmente los manejadores de interrupciones, deben ejecutarse la mayor parte del tiempo con las interrupciones habilitadas.
 
 Interrupciones y Excepciones
 ----------------------------
-La documentación de Intel clasifica las interrupciones y excepciones de la siguiente manera:
+Intel clasifica las interrupciones y excepciones de la siguiente manera:
 
 - Interrupciones:
     *Interrupciones enmascarables*
-        Todas las solicitudes de interrupción (IRQ) emitidas por dispositivos de E/S dan lugar a interrupciones enmascarables. Una interrupción enmascarable puede estar en dos estados: enmascarada o desenmascarada; la unidad de control ignora una interrupción enmascarada mientras permanezca enmascarada.
+        Todas las solicitudes de interrupción (IRQ) emitidas por dispositivos de E/S dan lugar a interrupciones enmascarables. Una interrupción enmascarable puede estar en dos estados: *enmascarada* o *desenmascarada*; la unidad de control ignora una interrupción enmascarada mientras permanezca enmascarada.
     *Interrupciones no enmascarables*
-        Solo unos pocos eventos críticos (como fallas de hardware) dan lugar a interrupciones no enmascarables. La CPU siempre reconoce las interrupciones no enmascarables
+        Solo unos pocos eventos críticos (como fallos de hardware) dan lugar a interrupciones no enmascarables. La CPU siempre reconoce las interrupciones no enmascarables
+
 - Excepciones:
     *Excepciones detectadas por el procesador*
-        Generadas cuando la CPU detecta una condición anómala mientras ejecuta una instrucción. Estas se dividen a su vez en tres grupos, según el valor del registro eip que se guarda en la pila del kernel cuando la unidad de control de la CPU genera la excepción.
+        Generadas cuando la CPU detecta una condición anómala mientras ejecuta una instrucción. Estas se dividen a su vez en tres grupos, según el valor del registro *eip* que se guarda en la pila del kernel cuando la unidad de control de la CPU genera la excepción.
             *Fallos*
-                Generalmente se pueden corregir; una vez corregidos, se permite que el programa se reinicie sin pérdida de continuidad. El valor guardado de eip es la dirección de la instrucción que causó el fallo, y por lo tanto esa instrucción puede reanudarse cuando el manejador de excepciones termina. Como veremos mas adelante, reanudar la misma instrucción es necesario siempre que el manejador pueda corregir la condición anómala que causó la excepción.
+                Generalmente se pueden corregir; una vez corregidos, se permite que el programa se reinicie sin pérdida. El valor guardado de *eip* es la dirección de la instrucción que causó el fallo, y por lo tanto esa instrucción puede reanudarse cuando el manejador de excepciones termina. Como veremos mas adelante, reanudar la misma instrucción es necesario siempre que el manejador pueda corregir la condición anómala que causó la excepción.
             *Trampas*
-                Se informan inmediatamente después de la ejecución de la instrucción de trampa; después de que el núcleo devuelve el control al programa, se le permite continuar su ejecución sin pérdida de continuidad. El valor guardado de eip es la dirección de la instrucción que debe ejecutarse después de la que causó la trampa. Una trampa se activa solo cuando no hay necesidad de volver a ejecutar la instrucción que terminó. El uso principal de las trampas es para fines de depuración. El papel de la señal de interrupción en este caso es notificar al depurador que se ha ejecutado una instrucción específica (por ejemplo, se ha alcanzado un punto de interrupción dentro de un programa). Una vez que el usuario ha examinado los datos proporcionados por el depurador, puede solicitar que se reanude la ejecución del programa depurado, comenzando desde la siguiente instrucción.
+                Se informan inmediatamente después de la ejecución de la instrucción de trampa; después de que el núcleo devuelve el control al programa, se le permite continuar su ejecución sin pérdida. El valor guardado de *eip* es la dirección de la instrucción que debe ejecutarse *después* de la que causó la trampa. Una trampa se activa solo cuando no hay necesidad de volver a ejecutar la instrucción que terminó. El uso principal de las trampas es para fines de depuración. El papel de la señal de interrupción en este caso es notificar al depurador que se ha ejecutado una instrucción específica (por ejemplo, se ha alcanzado un punto de interrupción dentro de un programa). Una vez que el usuario ha examinado los datos proporcionados por el depurador, puede solicitar que se reanude la ejecución del programa depurado, comenzando desde la siguiente instrucción.
             *Abortos*
-                Ocurrió un error grave; la unidad de control está en problemas y puede ser incapaz de almacenar en el registro *eip* la ubicación precisa de la instrucción que causa la excepción. Los abortos se utilizan para informar errores graves, como fallas de hardware y valores inválidos o inconsistentes en las tablas del sistema. La señal de interrupción enviada por la unidad de control es una señal de emergencia utilizada para cambiar el control al controlador de excepción de aborto correspondiente. Este controlador no tiene otra opción que forzar la terminación del proceso afectado.
+                Ocurrió un error grave; la unidad de control está en problemas y puede ser incapaz de almacenar en el registro *eip* la ubicación precisa de la instrucción que causa la excepción. Los abortos se utilizan para informar errores graves, como fallos de hardware y valores inválidos o inconsistentes en las tablas del sistema. La señal de interrupción enviada por la unidad de control es una señal de emergencia utilizada para cambiar el control al controlador de excepción de aborto correspondiente. Este controlador no tiene otra opción que forzar la terminación del proceso afectado.
 
     *Excepciones programadas*
         Ocurren a solicitud del programador. Son activadas por instrucciones *int* o *int3*. Las excepciones programadas son manejadas por la unidad de control como trampas; a menudo se denominan interrupciones de software. Estas excepciones tienen dos usos comunes: implementar llamadas al sistema y notificar a un depurador un evento específico.
@@ -58,25 +57,25 @@ IRQs e Interrupciones
 ---------------------
 Cada controlador de dispositivo de hardware capaz de emitir solicitudes de interrupción normalmente tiene una única línea de salida designada como la línea de solicitud de interrupción (IRQ). Todas las líneas IRQ existentes están conectadas a los pines de entrada de un circuito de hardware llamado *controlador de interrupciones programable*, que realiza las siguientes acciones:
 
- 1. Monitorea las líneas IRQ, verificando si hay señales elevadas. Si hay dos o más líneas IRQ elevadas, selecciona la que tenga el número de pin más bajo.
- 2. Si se produce una señal elevada en una línea IRQ:
+ 1. Monitorea las líneas IRQ, verificando si hay señales emitidas. Si hay dos o más líneas IRQ emitidas, selecciona la que tenga el número de pin más bajo.
+ 2. Si se produce una señal en una línea IRQ:
 
-    a. Convierte la señal elevada recibida en un vector correspondiente.
+    a. Convierte la señal emitida en un vector correspondiente.
     b. Almacena el vector en un puerto de E/S del controlador de interrupciones, lo que permite que la CPU lo lea a través del bus de datos.
-    c. Envía una señal elevada al pin INTR del procesador, es decir, emite una interrupción.
-    d. Espera hasta que la CPU reconozca la señal de interrupción escribiendo en uno de los puertos de E/S de los controladores de interrupciones programables (PIC); cuando esto ocurre, borra la línea INTR
+    c. Envía una señal al pin INTR del procesador, es decir, emite una interrupción.
+    d. Espera hasta que la CPU reconozca la señal de interrupción escribiendo en uno de los puertos de E/S de los controladores de interrupciones programables (PIC); cuando esto ocurre, borra la línea INTR.
 
  3. Vuelve al paso 1.
 
 Las líneas IRQ están numeradas secuencialmente comenzando desde 0; por lo tanto, la primera línea IRQ generalmente se denota como IRQ0. El vector predeterminado de Intel asociado con IRQn es n+32. Como se mencionó anteriormente, la asignación entre IRQ y vectores se puede modificar emitiendo instrucciones de E/S adecuadas a los puertos del controlador de interrupciones.
 
-Cada línea IRQ se puede deshabilitar selectivamente. Por lo tanto, el PIC se puede programar para deshabilitar IRQ. Es decir, se le puede indicar al PIC que deje de emitir interrupciones que hagan referencia a una línea IRQ dada, o que reanude su emisión. Las interrupciones deshabilitadas no se pierden; el PIC las envía a la CPU tan pronto como se habilitan nuevamente. Esta característica es utilizada por la mayoría de los manejadores de interrupciones, porque les permite procesar IRQ del mismo tipo en serie.
+Cada línea IRQ se puede deshabilitar selectivamente. Por lo tanto, el PIC se puede programar para deshabilitar IRQs. Es decir, se le puede indicar al PIC que deje de emitir interrupciones que hagan referencia a una línea IRQ dada, o que reanude su emisión. Las interrupciones deshabilitadas no se pierden; el PIC las envía a la CPU tan pronto como se habilitan nuevamente. Esta característica es utilizada por la mayoría de los manejadores de interrupciones, porque les permite procesar IRQ del mismo tipo en serie.
 
-La habilitación/deshabilitación selectiva de IRQ no es lo mismo que el enmascaramiento/desenmascaramiento global de interrupciones enmascarables. Cuando el indicador IF del registro *eflags* está despejado, la CPU ignora temporalmente cada interrupción enmascarable emitida por el PIC. Las instrucciones en lenguaje ensamblador *cli* y *sti*, respectivamente, limpian y activan ese indicador. Los PIC tradicionales se implementan conectando “en cascada” dos chips externos de estilo 8259A. Cada chip puede manejar hasta ocho líneas de entrada IRQ diferentes. Debido a que la línea de salida INT del PIC esclavo está conectada al pin IRQ2 del PIC maestro, la cantidad de líneas IRQ disponibles está limitada a 15.
+La habilitación/deshabilitación selectiva de IRQ no es lo mismo que el enmascaramiento/desenmascaramiento global de interrupciones enmascarables. La CPU ignora temporalmente cada interrupción enmascarable emitida por el PIC. Las instrucciones en lenguaje ensamblador *cli* y *sti*, respectivamente, limpian y activan ese indicador. Los PIC tradicionales se implementan conectando “en cascada” dos chips externos del tipo 8259A. Cada chip puede manejar hasta ocho líneas de entrada IRQ diferentes. Debido a que la línea de salida INT del PIC esclavo está conectada al pin IRQ2 del PIC maestro, la cantidad de líneas IRQ disponibles está limitada a 15.
 
 El controlador de interrupciones programable avanzado (APIC)
 ************************************************************
-La descripción anterior se refiere a los PIC diseñados para sistemas monoprocesador. Si el sistema incluye una sola CPU, la línea de salida del PIC maestro se puede conectar de forma directa al pin INTR de la CPU. Sin embargo, si el sistema incluye dos o más CPU, este enfoque ya no es válido y se necesitan PICs más sofisticados.
+La descripción anterior se refiere a los PIC diseñados para sistemas monoprocesador. Si el sistema incluye una sola CPU, la línea de salida del PIC maestro se puede conectar de forma directa al pin INTR de la CPU. Sin embargo, si el sistema incluye dos o más CPUs, este enfoque ya no es válido y se necesitan PICs más sofisticados.
 
 Ser capaz de entregar interrupciones a cada CPU en el sistema es crucial para explotar al máximo el paralelismo de la arquitectura SMP. Por esa razón, Intel introdujo a partir de Pentium III un nuevo componente denominado *Controlador de Interrupciones Programable Avanzado de E/S (I/O APIC)*. Este chip es la versión avanzada del antiguo Controlador de interrupciones programable 8259A; para soportar sistemas operativos antiguos, las placas base recientes incluyen ambos tipos de chips. Además, todos los microprocesadores 80×86 actuales incluyen un APIC local. Cada APIC local tiene registros de 32 bits, un reloj interno, un dispositivo temporizador local, y dos líneas IRQ adicionales, LINT0 y LINT1, reservadas para *interrupciones APIC locales*. Todas las APIC locales están conectadas a una APIC de E/S externa, dando lugar a un sistema multi-APIC.
 
@@ -93,40 +92,44 @@ El APIC de E/S consta de un conjunto de 24 líneas IRQ, una *tabla de redirecci�
 Las solicitudes de interrupción que provienen de dispositivos de hardware externos se pueden distribuir entre las CPUs disponibles de dos maneras:
 
 *Distribución estática*
-    La señal IRQ se envía a los APIC locales enumerados en la entrada correspondiente de la tabla de redirección. La interrupción se envía a una CPU específica, a un subconjunto de CPUs o a todas las CPUs a la vez (modo broadcast).
+    La señal IRQ se envía a los APIC locales enumerados en la entrada correspondiente de la tabla de redirección. La interrupción se envía a una CPU específica, a un subconjunto de CPUs o a todas las CPUs a la vez (modo *broadcast*).
 *Distribución dinámica*
     La señal IRQ se entrega al APIC local del procesador que está ejecutando el proceso con la prioridad más baja.
 
-    Cada APIC local tiene un *registro de prioridad de tarea* programable (TPR), que se utiliza para calcular la prioridad del proceso que se está ejecutando actualmente. Intel espera que este registro se modifique por núcleo de sistema operativo con cada cambio de proceso.
+    Cada APIC local tiene un *registro de prioridad de tarea* programable (TPR), que se utiliza para calcular la prioridad del proceso que se está ejecutando actualmente. Intel espera que este registro se modifique por el núcleo de sistema operativo con cada cambio de proceso.
 
     Si dos o más CPU comparten la prioridad más baja, la carga se distribuye entre ellas utilizando una técnica llamada *arbitraje*. A cada CPU se le asigna una prioridad de arbitraje diferente que va de 0 (la más baja) a 15 (la más alta) en el registro de prioridad de arbitraje del APIC local.
 
     Cada vez que se entrega una interrupción a una CPU, su prioridad de arbitraje correspondiente se establece automáticamente en 0, mientras que la prioridad de arbitraje de cualquier otra CPU aumenta. Cuando el registro de prioridad de arbitraje se vuelve mayor que 15, se establece en la prioridad de arbitraje anterior de la CPU ganadora incrementada en 1. Por lo tanto, las interrupciones se distribuyen en forma de round-robin entre las CPU con la misma prioridad de tarea.
 
-Además de distribuir interrupciones entre procesadores, el sistema multi-APIC permite que las CPUs generen *interrupciones entre procesadores*. Cuando una CPU desea enviar una interrupción a otra CPU, almacena el vector de interrupción y el identificador del APIC local del objetivo en el Registro de Comando de Interrupción (ICR) de su propio APIC local. Luego se envía un mensaje a través del bus APIC al APIC local del objetivo, que, por lo tanto, emite una interrupción correspondiente a su propia CPU.
+Además de distribuir interrupciones a procesadores, el sistema multi-APIC permite que las CPUs generen *interrupciones entre procesadores*. Cuando una CPU desea enviar una interrupción a otra CPU, almacena el vector de interrupción y el identificador del APIC local objetivo en el Registro de Comando de Interrupción (ICR) de su propio APIC local. Luego se envía un mensaje a través del bus APIC al APIC local objetivo, que, por lo tanto, emite una interrupción correspondiente a su propia CPU.
 
 Las interrupciones entre procesadores (en resumen, IPIs) son un componente crucial de la arquitectura SMP. Linux las usa activamente para intercambiar mensajes entre CPUs.
 
-Muchos de los sistemas monoprocesador actuales incluyen un chip APIC de E/S, que puede configurarse de dos maneras distintas:
-
-- Como un PIC externo estándar de estilo 8259A conectado a la CPU. El APIC local está deshabilitado y las dos líneas IRQ locales LINT0 y LINT1 están configuradas, respectivamente, como pines INTR y NMI.
-- Como un APIC de E/S externo estándar. El APIC local está habilitado y todas las interrupciones externas se reciben a través del APIC de E/S.
-
 Excepciones
 -----------
-Los microprocesadores 80×86 emiten aproximadamente 20 excepciones diferentes. El núcleo debe proporcionar un manejador de excepciones dedicado para cada tipo de excepción. Para algunas excepciones, la unidad de control de la CPU también genera un *código de error de hardware* y lo inserta en la pila del núcleo antes de iniciar el manejador de excepciones.
+Los microprocesadores 80×86 emiten aproximadamente 20 excepciones diferentes. El núcleo debe proporcionar un manejador de excepciones dedicado para cada tipo de excepción. Para algunas excepciones, la unidad de control de la CPU también genera un *código de error de hardware* y lo inserta en la pila del núcleo antes de iniciar el manejador de excepción.
 
-Intel reserva los valores del 20 al 31 para desarrollos futuros. Cada excepción es manejada por un manejador de excepciones específico, que generalmente envía una señal Unix al proceso que causó la excepción.
+La siguiente lista muestra el vector, el nombre y una breve descripción de algunas excepciones encontradas en procesadores 80×86.
+
+0. *Error de División*. Se genera cuando un programa emite una división entera por 0.
+1. *Depuración*. Se genera para implementar *ejecución paso a paso* de un depurador.
+2. *No usado*. Reservado para interrupciones no enmascarables.
+3. *Breakpoint*. Causado por una instrucción *int3* normalmente agregada por un depurador.
+4. *Desbordamiento*. Se ejecuta una instrucción *int* por error de desbordamiento.
+5. etc.
+
+Cada excepción es gestionada por un manejador de excepciones específico, que generalmente envía una señal Unix al proceso que causó la excepción.
 
 Tabla de descriptores de interrupciones
 ---------------------------------------
-Una tabla del sistema llamada *Tabla de Descriptores de Interrupciones (IDT)* asocia cada interrupción o vector de excepción con la dirección del manejador de interrupciones o excepciones correspondiente. La IDT debe inicializarse correctamente antes de que el núcleo habilite las interrupciones.
+Una tabla del sistema llamada *Tabla de Descriptores de Interrupciones (IDT)* asocia cada interrupción o vector de excepción con la dirección del manejador de interrupciones o excepción correspondiente. La IDT debe inicializarse correctamente antes de que el núcleo habilite las interrupciones.
 
-El formato de la IDT es similar al de la GDT y las LDT examinadas con antelación. Cada entrada corresponde a una interrupción o un vector de excepción y consta de un descriptor de 8 bytes. Por lo tanto, se requiere un máximo de 256×8=2048 bytes para almacenar el IDT.
+El formato de la IDT es similar al de la GDT y las LDT examinadas con antelación. Cada entrada corresponde a una interrupción o un vector de excepción y consta de un descriptor de 8 bytes.
 
 El registro de CPU *idtr* permite que el IDT se ubique en cualquier lugar de la memoria: especifica tanto la dirección lineal base del IDT como su límite (longitud máxima). Debe inicializarse antes de habilitar interrupciones.
 
-El IDT puede incluir tres tipos de descriptores; la Figura 4-2 ilustra el significado de los 64 bits incluidos en cada uno de ellos. En particular, el valor del campo Tipo codificado en los bits 40–43 identifica el tipo de descriptor.
+El IDT puede incluir tres tipos de descriptores; la Figura 4-2 ilustra el significado de los 64 bits incluidos en cada uno de ellos. En particular, el valor del campo *Tipo* codificado en los bits 40–43 identifica el tipo de descriptor.
 
 ..  figure:: ../images/interrupciones-figura-2-formato-descriptores-manejadores.png
     :align: center
@@ -145,30 +148,19 @@ Después de ejecutar una instrucción, el par de registros *cs* y *eip* contiene
  2. Lee la entrada i-ésima del IDT al que hace referencia el registro *idtr*.
  3. Obtiene la dirección base del GDT del registro *gdtr* y busca en el GDT para leer el descriptor de segmento identificado por el selector en la entrada del IDT. Este descriptor especifica la dirección base del segmento que incluye el controlador de interrupción o excepción.
  4. Se asegura de que la interrupción haya sido emitida por una fuente autorizada. En primer lugar, compara el nivel de privilegio actual (CPL), que se almacena en los dos bits menos significativos del registro *cs*, con el nivel de privilegio del descriptor (DPL) del descriptor de segmento incluido en el GDT. Genera una excepción de “Protección general” si el CPL es inferior al DPL, porque el manejador de interrupciones no puede tener un privilegio inferior al del programa que causó la interrupción.
- 5. Comprueba si se está produciendo un cambio de nivel de privilegio, es decir, si el CPL es diferente del DPL del descriptor de segmento seleccionado. Si es así, la unidad de control debe empezar a utilizar la pila asociada con el nuevo nivel de privilegio. Para ello, realiza los siguientes pasos:
-
-    a. Accede al segmento TSS del proceso en ejecución.
-    b. Carga los registros *ss* y *esp* con los valores adecuados para el segmento de pila y el puntero de pila asociados con el nuevo nivel de privilegio. Estos valores se encuentran en el TSS.
-    c. En la nueva pila, guarda los valores anteriores de *ss* y *esp*, que definen la dirección lógica de la pila asociada con el nivel de privilegio anterior.
+ 5. Comprueba si se está produciendo un cambio de nivel de privilegio, es decir, si el CPL es diferente del DPL del descriptor de segmento seleccionado. Si es así, la unidad de control debe empezar a utilizar la pila asociada con el nuevo nivel de privilegio.
  6. Si se ha producido un fallo, carga *cs* y *eip* con la dirección lógica de la instrucción que causó la excepción para que pueda ejecutarse de nuevo.
  7. Guarda el contenido de *eflags*, *cs* y *eip* en la pila.
  8. Si la excepción lleva un código de error de hardware, lo guarda en la pila.
- 9. Carga *cs* y *eip*, respectivamente, con el Selector de segmento y los campos Offset del Descriptor de segmento almacenados en la entrada i-ésima del IDT. Estos valores definen la dirección lógica de la primera instrucción del manejador de interrupciones o excepciones.
+ 9. Carga *cs* y *eip*, respectivamente, con el Selector de segmento y los campos offset del Descriptor de segmento almacenados en la entrada i-ésima del IDT. Estos valores definen la dirección lógica de la primera instrucción del manejador de interrupciones o excepciones.
 
-El último paso realizado por la unidad de control es equivalente a un salto al manejador de interrupciones o excepciones. En otras palabras, la instrucción procesada por la unidad de control después de tratar la señal de interrupción es la primera instrucción del manejador seleccionado.
-
-Después de procesar la interrupción o excepción, el manejador correspondiente debe ceder el control al proceso interrumpido emitiendo la instrucción *iret*, que obliga a la unidad de control a:
-
- 1. Cargar los registros *cs*, *eip* y *eflags* con los valores guardados en la pila. Si se ha insertado un código de error de hardware en la pila sobre el contenido de *eip*, se debe extraer antes de ejecutar *iret*.
- 2. Verificar si el CPL del manejador es igual al valor contenido en los dos bits menos significativos de *cs* (esto significa que el proceso interrumpido se estaba ejecutando en el mismo nivel de privilegio que el manejador). Si es así, *iret* concluye la ejecución; de lo contrario, pasa al siguiente paso.
- 3. Carga los registros *ss* y *esp* de la pila y vuelva a la pila asociada con el nivel de privilegio anterior.
- 4. Examina el contenido de los registros de segmento *ds, es, fs y gs*; si alguno de ellos contiene un selector que hace referencia a un Descriptor de Segmento cuyo valor DPL es menor que CPL, borre el registro de segmento correspondiente. La unidad de control hace esto para prohibir que los programas de Modo Usuario que se ejecutan con un CPL igual a 3 utilicen registros de segmento utilizados previamente por rutinas del núcleo (con un DPL igual a 0). Si estos registros no se borran, los programas de Modo Usuario maliciosos podrían explotarlos para acceder al espacio de direcciones del núcleo.
+El último paso realizado por la unidad de control es equivalente a un salto al manejador de interrupción o excepción. En otras palabras, la instrucción procesada por la unidad de control después de tratar la señal de interrupción es la primera instrucción del manejador de excepción seleccionado.
 
 Ejecución anidada de controladores de excepciones e interrupciones
 ------------------------------------------------------------------
-Cada interrupción o excepción da lugar a una ruta de control del núcleo o a una secuencia separada de instrucciones que se ejecutan en modo núcleo en nombre del proceso actual. Por ejemplo, cuando un dispositivo de E/S lanza una interrupción, las primeras instrucciones de la ruta de control del núcleo correspondiente son las que guardan el contenido de los registros de la CPU en la pila del modo núcleo, mientras que las últimas son las que restauran el contenido de los registros.
+Cada interrupción o excepción da lugar a una ruta de control del núcleo o a una secuencia separada de instrucciones que se ejecutan en modo núcleo en nombre del proceso actual. Por ejemplo, cuando un dispositivo de E/S lanza una interrupción, las primeras instrucciones de la ruta de control del núcleo correspondiente son las que guardan el contenido de los registros de la CPU en la pila del núcleo, mientras que las últimas son las que restauran el contenido de los registros.
 
-Las rutas de control del núcleo pueden estar anidadas de forma arbitraria; un manejador de interrupciones puede ser interrumpido por otro manejador de interrupciones, dando lugar así a una ejecución anidada de rutas de control del núcleo, como se muestra en la figura 3. Como resultado, las últimas instrucciones de una ruta de control del núcleo que se encarga de una interrupción no siempre ponen el proceso actual de nuevo en modo usuario: si el nivel de anidación es mayor que 1, estas instrucciones pondrán en ejecución la ruta de control del núcleo que se interrumpió por última vez, y la CPU seguirá funcionando en modo núcleo.
+Las rutas de control del núcleo pueden estar anidadas de forma arbitraria; un manejador de interrupciones puede ser interrumpido por otro manejador de interrupciones, dando lugar así a una ejecución anidada de rutas de control del núcleo, como se muestra en la figura 3. Como resultado, las últimas instrucciones de una ruta de control del núcleo que se encarga de una interrupción no siempre ponen al proceso actual de nuevo en modo usuario: si el nivel de anidación es mayor que 1, éstas instrucciones pondrán en ejecución la ruta de control del núcleo que se interrumpió por última vez, y la CPU seguirá funcionando en modo núcleo.
 
 ..  figure:: ../images/interrupciones-figura-3-ejemplo-ejecucion-anidada-hilos-kernel.png
     :align: center
@@ -178,13 +170,13 @@ Las rutas de control del núcleo pueden estar anidadas de forma arbitraria; un m
 
 El precio a pagar por permitir rutas de control de kernel anidadas es que un manejador de interrupciones nunca debe bloquearse, es decir, no se puede realizar ningún cambio de proceso mientras que se esté ejecutando un manejador de interrupciones. De hecho, todos los datos necesarios para reanudar una ruta de control de kernel anidada se almacenan en la pila del modo kernel, que está estrechamente vinculada al proceso actual.
 
-Suponiendo que el kernel no tiene errores, la mayoría de las excepciones solo pueden ocurrir mientras la CPU está en modo usuario. De hecho, son causadas por errores de programación o activadas por depuradores. Sin embargo, la excepción "Page Fault" puede ocurrir en el modo kernel. Esto sucede cuando el proceso intenta direccionar una página que pertenece a su espacio de direcciones pero que no está actualmente en la RAM. Mientras maneja dicha excepción, el kernel puede suspender el proceso actual y reemplazarlo con otro hasta que la página solicitada esté disponible. La ruta de control de kernel que maneja la excepción "Page Fault" reanuda la ejecución tan pronto como el proceso obtiene el procesador nuevamente.
+Suponiendo que el kernel no tiene errores, la mayoría de las excepciones solo pueden ocurrir mientras la CPU está en modo usuario. De hecho, son causadas por errores de programación o activadas por depuradores. Sin embargo, la excepción "Page Fault" puede ocurrir en modo kernel. Esto sucede cuando el proceso intenta direccionar una página que pertenece a su espacio de direcciones pero que no está actualmente en la RAM. Mientras maneja dicha excepción, el kernel puede suspender el proceso actual y reemplazarlo con otro hasta que la página solicitada esté disponible. La ruta de control de kernel que maneja la excepción "Page Fault" reanuda la ejecución tan pronto como el proceso obtiene el procesador nuevamente.
 
 Como el manejador de excepciones “Page Fault” nunca da lugar a más excepciones, como máximo se pueden apilar dos rutas de control del núcleo asociadas con excepciones (la primera causada por una invocación de llamada del sistema, la segunda causada por un Page Fault), una sobre la otra.
 
 A diferencia de las excepciones, las interrupciones emitidas por dispositivos de E/S no hacen referencia a estructuras de datos específicas del proceso actual, aunque las rutas de control del núcleo que las manejan se ejecutan en nombre de ese proceso. De hecho, es imposible predecir qué proceso se estará ejecutando cuando se produzca una interrupción determinada.
 
-Un manejador de interrupciones puede anular tanto a otros manejadores de interrupciones como a manejadores de excepciones. Por el contrario, un manejador de excepciones nunca anula a un manejador de interrupciones. La única excepción que se puede activar en el modo de núcleo es “Page Fault”, que acabamos de describir. Pero los manejadores de interrupciones nunca realizan operaciones que puedan inducir fallos de página y, por lo tanto, potencialmente, un cambio de proceso.
+Un manejador de interrupciones se puede apropiar tanto de otros manejadores de interrupciones como de manejadores de excepciones. Por el contrario, un manejador de excepciones nunca se apropia de un manejador de interrupciones. La única excepción que se puede activar en el modo de núcleo es “Page Fault”, que acabamos de describir. Pero los manejadores de interrupciones nunca realizan operaciones que puedan inducir fallos de página y, por lo tanto, potencialmente, un cambio de proceso.
 
 Linux intercambia las rutas de control del núcleo por dos razones principales:
 
@@ -213,7 +205,7 @@ El manejo de interrupciones depende del tipo de interrupción. Para nuestros pro
 
 *Interrupciones de E/S*
     Un dispositivo de E/S requiere atención; el manejador de interrupciones correspondiente debe consultar al dispositivo para determinar el curso de acción adecuado.
-*Interrupciones del temporizador*
+*Interrupciones de temporizador*
     Algún temporizador, ya sea un temporizador APIC local o un temporizador externo, ha emitido una interrupción; este tipo de interrupción le dice al núcleo que ha transcurrido un intervalo de tiempo fijo. Estas interrupciones se manejan principalmente como interrupciones de E/S.
 *Interrupciones entre procesadores*
     Una CPU emitió una interrupción para otra CPU de un sistema multiprocesador.
@@ -245,7 +237,7 @@ Independientemente del tipo de circuito que causó la interrupción, todos los m
 3. Ejecutar las rutinas de servicio de interrupción (ISR) asociadas con todos los dispositivos que comparten la IRQ.
 4. Terminar saltando a la dirección *ret_from_intr()*.
 
-Se necesitan varios descriptores para representar tanto el estado de las líneas IRQ como las funciones que se ejecutarán cuando se produce una interrupción. La igura 4 representa de forma esquemática los circuitos de hardware y las funciones de software utilizadas para manejar una interrupción. Estas funciones se analizan en las siguientes secciones.
+Se necesitan varios descriptores para representar tanto el estado de las líneas IRQ como las funciones que se ejecutarán cuando se produce una interrupción. La figura 4 representa de forma esquemática los circuitos de hardware y las funciones de software utilizadas para manejar una interrupción. Estas funciones se analizan en las siguientes secciones.
 
 Vectores de interrupción
 >>>>>>>>>>>>>>>>>>>>>>>>
@@ -292,6 +284,7 @@ La arquitectura de PC compatible con IBM requiere que algunos dispositivos esté
 - En general, un dispositivo de E/S se puede conectar a un número limitado de líneas IRQ. (De hecho, cuando se juega con un PC antiguo en el que no es posible compartir IRQ, es posible que no se pueda instalar una nueva tarjeta debido a conflictos de IRQ con otros dispositivos de hardware ya presentes). 
 
 Hay tres formas de seleccionar una línea para un dispositivo configurable por IRQ:
+
 - Configurando puentes de hardware (solo en tarjetas de dispositivos muy antiguas).
 - Mediante un programa de utilidad enviado con el dispositivo y ejecutado al instalarlo. Dicho programa puede solicitar al usuario que seleccione un número de IRQ disponible o sondear el sistema para determinar un número disponible por sí mismo.
 - Mediante un protocolo de hardware ejecutado al iniciar el sistema. Los dispositivos periféricos declaran qué líneas de interrupción están listos para usar; luego, se negocian los valores finales para reducir los conflictos tanto como sea posible. Una vez hecho esto, cada manejador de interrupciones puede leer la IRQ asignada mediante una función que accede a algunos puertos de E/S del dispositivo. Por ejemplo, los controladores para dispositivos que cumplen con el estándar de Interconexión de componentes periféricos (PCI) utilizan un grupo de funciones como *pci_read_config_byte()* para acceder al espacio de configuración del dispositivo.
@@ -379,9 +372,9 @@ Linux 2.6 hace uso de un hilo especial del núcleo llamado *kirqd* que explota u
 
 Softirqs y Tasklets
 -------------------
-Mencionamos anteriormente en la sección “Manejo de interrupciones” que varias tareas entre las ejecutadas por el núcleo no son críticas: pueden ser diferidas por un largo período de tiempo, si es necesario. Recuerde que las rutinas de servicio de interrupción (ISR) de un manejador de interrupciones están serializadas, y a menudo no debería haber ocurrencia de una interrupción hasta que el manejador de interrupciones correspondiente haya terminado. Por el contrario, las tareas diferibles pueden ejecutarse con todas las interrupciones habilitadas. Sacarlos del manejador de interrupciones ayuda a mantener pequeño el tiempo de respuesta del núcleo. Esta es una propiedad muy importante para muchas aplicaciones críticas en el tiempo que esperan que sus solicitudes de interrupción sean atendidas en unos pocos milisegundos.
+Mencionamos anteriormente en la sección “Manejo de interrupciones” que varias tareas entre las ejecutadas por el núcleo no son críticas: pueden ser diferidas por un largo período de tiempo, si es necesario. Recuerde que las rutinas de servicio de interrupción (ISR) de un manejador de interrupciones están serializadas, y a menudo no debería haber ocurrencia de una interrupción hasta que el manejador de interrupciones correspondiente haya terminado. Por el contrario, las tareas diferibles pueden ejecutarse con todas las interrupciones habilitadas. Sacarlos del manejador de interrupciones ayuda a mantener pequeño el tiempo de respuesta del núcleo. Esta es una propiedad muy importante para muchas aplicaciones críticas que esperan que sus solicitudes de interrupción sean atendidas en unos pocos milisegundos.
 
-Linux 2.6 responde a este desafío utilizando dos tipos de funciones del núcleo interrumpibles no urgentes: las llamadas *funciones diferibles (softirqs y tasklets)*, y las ejecutadas por medio de algunas colas de trabajo (Work Queues).
+Linux 2.6 responde a este desafío utilizando dos tipos de funciones del núcleo interrumpibles no urgentes: las llamadas *funciones diferibles (Softirqs y Tasklets)*, y las ejecutadas por medio de algunas colas de trabajo (Work Queues).
 
 Las softirqs y los tasklets están estrictamente correlacionados, porque los tasklets se implementan sobre las softirqs. De hecho, el término “softirq”, que aparece en el código fuente del núcleo, a menudo denota ambos tipos de funciones diferibles. Otro término ampliamente utilizado es el *contexto de interrupción*: especifica que el núcleo está ejecutando actualmente un manejador de interrupciones o una función diferible.
 
