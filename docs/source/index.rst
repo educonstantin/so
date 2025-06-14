@@ -1,7 +1,7 @@
 Bienvenidos!
 ===========
 
-Corresponde a los apuntes de la cátedra *Sistemas Operativos* de la carrera de
+Corresponde a los apuntes de la cátedra **Sistemas Operativos** de la carrera de
 *Ingeniería en Computación* dictada en la *Facultad de Ingeniería* en la 
 *Universidad Nacional de Misiones*.
 La asignatura se dicta en el 3° año de la carrera durante el 1° cuatrimestre.
