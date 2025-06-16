@@ -370,7 +370,7 @@ Linux 2.6 hace uso de un hilo especial del núcleo llamado *kirqd* que explota u
 
 Softirqs y Tasklets
 -------------------
-Mencionamos anteriormente en la sección “Manejo de interrupciones” que varias tareas entre las ejecutadas por el núcleo no son críticas: pueden ser diferidas por un período de tiempo, si es necesario. Recuerde que las rutinas de servicio de interrupción (ISR) de un manejador de interrupciones están serializadas, y a menudo no deberían haber interrupciones hasta que el manejador de la interrupción actual haya finalizado. Por el contrario, las tareas diferibles pueden ejecutarse con todas las interrupciones habilitadas. Sacarlos del manejador de interrupción ayuda a mantener pequeño el tiempo de respuesta del núcleo. Esta es una propiedad muy importante para muchas aplicaciones críticas que esperan que sus solicitudes de interrupción sean atendidas en unos pocos milisegundos.
+Mencionamos anteriormente en la sección “Manejo de interrupciones” que varias tareas entre las ejecutadas por el núcleo no son críticas: pueden ser diferidas por un período de tiempo, si es necesario. Recuerde que las rutinas de servicio de interrupción (ISR) de un manejador de interrupciones están serializadas, y a menudo no deberían haber interrupciones hasta que el manejador de la interrupción actual haya finalizado. Por el contrario, las tareas diferibles pueden ejecutarse con todas las interrupciones habilitadas. Sacarlos del manejador de interrupción ayuda a mantener pequeño el tiempo de respuesta del núcleo. Esta es una propiedad muy importante para muchas aplicaciones críticas que esperan que sus solicitudes de interrupción sean atendidas en pocos milisegundos.
 
 Linux 2.6 responde a este desafío utilizando dos tipos de funciones del núcleo interrumpibles no urgentes: las llamadas *funciones diferibles (Softirqs y Tasklets)*, y las ejecutadas por medio de algunas colas de trabajo (Work Queues).
 
@@ -395,31 +395,41 @@ Softirqs
 ********
 Linux 2.6 utiliza una cantidad limitada de softirqs. Para la mayoría de los propósitos, los tasklets son lo suficientemente buenos y son mucho más fáciles de escribir porque no necesitan ser reentrantes.
 
-De hecho, actualmente solo están definidos los seis tipos de softirqs que se enumeran en la siguiente tabla.
+De hecho, actualmente solo están definidos algunos tipos de softirqs que se enumeran en la siguiente tabla.
 
-+----------------+------------------+---------------------------------------------------+
-|Softirq         |Indice(prioridad) |Descripción                                        |
-+================+==================+===================================================+
-|HI_SOFTIRQ      |0                 |Maneja tasklets de alta prioridad                  |
-+----------------+------------------+---------------------------------------------------+
-|TIMER_SOFTIRQ   |1                 |Tasklets relacionados a interrupciones del timer   |
-+----------------+------------------+---------------------------------------------------+
-|NET_TX_SOFTIRQ  |2                 |Transmisión de paquetes hacia placas de red        |
-+----------------+------------------+---------------------------------------------------+
-|NET_RX_SOFTIRQ  |3                 |Recepción de paquetes desde placas de red          |
-+----------------+------------------+---------------------------------------------------+
-|SCSI_SOFTIRQ    |4                 |Procesamiento post interrupción de comandos SCSI   |
-+----------------+------------------+---------------------------------------------------+
-|TASKLET_SOFTIRQ |5                 |Maneja tasklets regulares                          |
-+----------------+------------------+---------------------------------------------------+
++-----------------------+------------------+---------------------------------------------------+
+|Softirq                |Indice(prioridad) |Descripción                                        |
++=======================+==================+===================================================+
+|HI_SOFTIRQ             |0                 |Maneja tasklets de alta prioridad                  |
++-----------------------+------------------+---------------------------------------------------+
+|TIMER_SOFTIRQ          |1                 |Tasklets relacionados a interrupciones del timer   |
++-----------------------+------------------+---------------------------------------------------+
+|NET_TX_SOFTIRQ         |2                 |Transmisión de paquetes hacia placas de red        |
++-----------------------+------------------+---------------------------------------------------+
+|NET_RX_SOFTIRQ         |3                 |Recepción de paquetes desde placas de red          |
++-----------------------+------------------+---------------------------------------------------+
+|BLOCK_SOFTIRQ          |4                 |Usado por el subsistema de E/S                     |
++-----------------------+------------------+---------------------------------------------------+
+|BLOCK_IOPOLL_SOFTIRQ   |5                 |Usado por el subsistema de E/S                     |
++-----------------------+------------------+---------------------------------------------------+
+|TASKLET_SOFTIRQ        |6                 |Maneja tasklets regulares                          |
++-----------------------+------------------+---------------------------------------------------+
+|SCHED_SOFTIRQ          |7                 |Balance de carga                                   |
++-----------------------+------------------+---------------------------------------------------+
+|HRTIMER_SOFTIRQ        |8                 |Implementación de timers de alta precisión         |
++-----------------------+------------------+---------------------------------------------------+
+|RCU_SOFTIRQ            |9                 |Implementación de mecanismos RCU (Read-Copy-Update)|
++-----------------------+------------------+---------------------------------------------------+
+|NR_SOFTIRQS            |10                |Maneja tasklets regulares                          |
++-----------------------+------------------+---------------------------------------------------+
 
 El índice de un sofirq determina su prioridad: un índice más bajo significa una prioridad más alta porque las funciones de softirq se ejecutarán a partir del índice 0.
 
 Manejando softirqs
 >>>>>>>>>>>>>>>>>>
-La función *open_softirq()* se encarga de la inicialización de softirq. Utiliza tres parámetros: el índice de softirq, un puntero a la función softirq que se va a ejecutar y un segundo puntero a una estructura de datos que puede requerir la función softirq. *open_softirq()* se limita a inicializar la entrada adecuada del vector *softirq_vec*.
+La función *open_softirq()* se encarga de la **inicialización** de softirq. Utiliza tres parámetros: el índice de softirq, un puntero a la función softirq que se va a ejecutar y un segundo puntero a una estructura de datos que puede requerir la función softirq. *open_softirq()* se limita a inicializar la entrada adecuada del vector *softirq_vec*.
 
-Los softirq se activan mediante la función *raise_softirq()*. Esta función, que recibe como parámetro el índice *nr* del softirq, realiza las siguientes acciones:
+Los softirq se **activan** mediante la función *raise_softirq()*. Esta función, que recibe como parámetro el índice *nr* del softirq, realiza las siguientes acciones:
 
 1. Ejecuta la macro local_irq_save para guardar el estado del indicador IF del registro eflags y deshabilitar las interrupciones en la CPU local.
 2. Marca el softirq como pendiente fijando el bit correspondiente al índice nr en la máscara de bits de softirq de la CPU local.
@@ -429,7 +439,7 @@ Los softirq se activan mediante la función *raise_softirq()*. Esta función, qu
 
 Las comprobaciones de softirqs activos (pendientes) se deben realizar periódicamente, pero sin inducir demasiada sobrecarga. Se realizan en unos pocos puntos del código del kernel. Aquí hay una lista de los puntos más significativos (tenga en cuenta que el número y la posición de los puntos de control de softirq cambian tanto con la versión del núcleo como con la arquitectura de hardware compatible):
 
-- Cuando el núcleo invoca la función local_bh_enable()* para habilitar softirqs en la CPU local
+- Cuando el núcleo invoca la función local_bh_enable()* (local bottom half enable) para habilitar softirqs en la CPU local
 - Cuando la función do_IRQ() termina de manejar una interrupción de E/S e invoca la macro irq_exit()
 - Si el sistema usa una APIC de E/S, cuando la función smp_apic_timer_interrupt() termina de manejar una interrupción del temporizador local (consulte la sección “Arquitectura de cronometraje en sistemas multiprocesador” en el Capítulo 6)
 - En sistemas multiprocesador, cuando una CPU termina de manejar una función activada por una interrupción entre procesadores CALL_FUNCTION_VECTOR
