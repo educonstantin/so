@@ -376,7 +376,7 @@ Linux 2.6 responde a este desafío utilizando dos tipos de funciones del núcleo
 
 Las softirqs y los tasklets están estrictamente correlacionados, porque los tasklets se implementan sobre las softirqs. De hecho, el término “softirq”, que aparece en el código fuente del núcleo, a menudo denota ambos tipos de funciones diferibles. Otro término ampliamente utilizado es el *contexto de interrupción*: especifica que el núcleo está ejecutando actualmente un manejador de interrupciones o una función diferible.
 
-Los softirq se asignan estáticamente (es decir, se definen en tiempo de compilación), mientras que los tasklets también se pueden asignar e inicializar en tiempo de ejecución (por ejemplo, al cargar un módulo del núcleo). Los softirq se pueden ejecutar simultáneamente en varias CPU, incluso si son del mismo tipo. Por lo tanto, los softirq son funciones reentrantes y deben proteger explícitamente sus estructuras de datos con candados (Spin Lock). Los tasklets no tienen que preocuparse por esto, porque su ejecución está controlada de manera más estricta por el núcleo. Los tasklets del mismo tipo siempre se serializan: en otras palabras, el mismo tipo de tasklet no puede ser ejecutado por dos CPUs al mismo tiempo. Sin embargo, los tasklets de diferentes tipos se pueden ejecutar simultáneamente en varias CPUs. La serialización de tasklets simplifica la vida de los desarrolladores de drivers de dispositivos, porque la función del tasklet no necesita ser reentrante.
+Los softirq se asignan estáticamente (es decir, se definen en tiempo de compilación), mientras que los tasklets también se pueden asignar e inicializar en tiempo de ejecución (por ejemplo, al cargar un módulo del núcleo). Los softirq se pueden ejecutar simultáneamente en varias CPUs, incluso si son del mismo tipo. Por lo tanto, los softirq son funciones reentrantes y deben proteger explícitamente sus estructuras de datos con candados (Spin Lock). Los tasklets no tienen que preocuparse por esto, porque su ejecución está controlada de manera más estricta por el núcleo. Los tasklets del mismo tipo siempre se serializan: en otras palabras, el mismo tipo de tasklet no puede ser ejecutado por dos CPUs al mismo tiempo. Sin embargo, los tasklets de diferentes tipos se pueden ejecutar simultáneamente en varias CPUs. La serialización de tasklets simplifica la vida de los desarrolladores de drivers de dispositivos, porque la función del tasklet no necesita ser reentrante.
 
 En términos generales, se pueden realizar cuatro tipos de operaciones en funciones diferibles:
 
@@ -429,46 +429,17 @@ Manejando softirqs
 >>>>>>>>>>>>>>>>>>
 La función *open_softirq()* se encarga de la **inicialización** de softirq. Utiliza tres parámetros: el índice de softirq, un puntero a la función softirq que se va a ejecutar y un segundo puntero a una estructura de datos que puede requerir la función softirq. *open_softirq()* se limita a inicializar la entrada adecuada del vector *softirq_vec*.
 
-Los softirq se **activan** mediante la función *raise_softirq()*. Esta función, que recibe como parámetro el índice *nr* del softirq, realiza las siguientes acciones:
+Los softirq se **activan** mediante la función *raise_softirq()*. Esta función, que recibe como parámetro el índice *nr* del softirq.
 
-1. Ejecuta la macro local_irq_save para guardar el estado del indicador IF del registro eflags y deshabilitar las interrupciones en la CPU local.
-2. Marca el softirq como pendiente fijando el bit correspondiente al índice nr en la máscara de bits de softirq de la CPU local.
-3. Si in_interrupt() produce el valor 1, salta al paso 5. Esta situación indica que se ha invocado raise_softirq() en el contexto de interrupción o que los softirqs están deshabilitados actualmente.
-4. De lo contrario, invoca wakeup_softirqd() para despertar, si es necesario, el hilo de kernel ksoftirqd de la CPU local (ver más adelante).
-5. Ejecuta la macro local_irq_restore para restaurar el estado del indicador IF guardado en el paso 1.
-
-Las comprobaciones de softirqs activos (pendientes) se deben realizar periódicamente, pero sin inducir demasiada sobrecarga. Se realizan en unos pocos puntos del código del kernel. Aquí hay una lista de los puntos más significativos (tenga en cuenta que el número y la posición de los puntos de control de softirq cambian tanto con la versión del núcleo como con la arquitectura de hardware compatible):
-
-- Cuando el núcleo invoca la función local_bh_enable()* (local bottom half enable) para habilitar softirqs en la CPU local
-- Cuando la función do_IRQ() termina de manejar una interrupción de E/S e invoca la macro irq_exit()
-- Si el sistema usa una APIC de E/S, cuando la función smp_apic_timer_interrupt() termina de manejar una interrupción del temporizador local (consulte la sección “Arquitectura de cronometraje en sistemas multiprocesador” en el Capítulo 6)
-- En sistemas multiprocesador, cuando una CPU termina de manejar una función activada por una interrupción entre procesadores CALL_FUNCTION_VECTOR
-- Cuando se despierta uno de los subprocesos especiales del núcleo ksoftirqd/n (consulte más adelante)
+Las comprobaciones de softirqs activos (pendientes) se deben realizar periódicamente, pero sin inducir demasiada sobrecarga. Se realizan en unos pocos puntos de control del código del kernel.
 
 La función do_softirq()
 >>>>>>>>>>>>>>>>>>>>>>>
-Si se detectan softirqs pendientes en uno de estos puntos de control, el núcleo invoca *do_softirq()* para encargarse de ellos. Esta función realiza las siguientes acciones:
-
-1. Si *in_interrupt()* produce el valor uno, esta función retorna. Esta situación indica que se ha invocado *do_softirq()* en el contexto de interrupción o que los softirqs están actualmente deshabilitados.
-2. Ejecuta *local_irq_save* para guardar el estado del indicador IF y deshabilitar las interrupciones en la CPU local.
-3. Invoca la función *__do_softirq()*.
-4. Ejecuta local_irq_restore para restaurar el estado del indicador IF (interrupciones locales habilitadas o deshabilitadas) guardado en el paso 2 y regresa.
+Si se detectan softirqs pendientes en uno de estos puntos de control, el núcleo invoca *do_softirq()* para encargarse de ellos.
 
 La función __do_softirq()
 >>>>>>>>>>>>>>>>>>>>>>>>>
-La función *__do_softirq()* lee la máscara de bits softirq de la CPU local y ejecuta las funciones diferibles correspondientes a cada bit establecido. Mientras se ejecuta una función softirq, pueden aparecer nuevas softirq pendientes; para asegurar un tiempo de latencia bajo para las funciones diferibles, *__do_softirq()* sigue ejecutándose hasta que se hayan ejecutado todas las softirq pendientes. Sin embargo, este mecanismo podría obligar a __do_softirq() a ejecutarse durante largos períodos de tiempo, lo que retrasaría considerablemente los procesos del modo usuario. Por esa razón, *__do_softirq()* realiza una cantidad fija de iteraciones (10) y luego retorna. Las softirq pendientes restantes, si las hubiera, serán manejadas a su debido tiempo por el hilo del kernel *ksoftirqd* que se describe en la siguiente sección. Aquí hay una breve descripción de las acciones realizadas por la función:
-
-1. Inicializa el contador de iteración a 10.
-2. Copia la máscara de bits softirq de la CPU local en la variable local pending.
-3. Invoca local_bh_disable() para aumentar el contador softirq. Es un tanto contra-intuitivo que las funciones diferibles deban ser deshabilitadas antes de comenzar a ejecutarlas, pero realmente tiene mucho sentido. Debido a que las funciones diferibles se ejecutan principalmente con interrupciones habilitadas, se puede generar una interrupción en medio de la función __do_softirq(). Cuando do_IRQ() ejecuta la macro irq_exit(), se podría iniciar otra instancia de la función __do_softirq(). Esto se debe evitar, porque las funciones diferibles deben ejecutarse en serie en la CPU. Por lo tanto, la primera instancia de __do_softirq() deshabilita las funciones diferibles, de modo que cada nueva instancia de la función saldrá en el paso 1 de do_softirq().
-4. Borra el mapa de bits de softirq de la CPU local, de modo que se puedan activar nuevos softirqs (el valor de la máscara de bits ya se guardó en la variable local pendiente en el paso 2).
-5. Ejecuta local_irq_enable() para habilitar las interrupciones locales.
-6. Para cada bit establecido en la variable local pendiente, ejecuta la función softirq correspondiente; recuerde que la dirección de la función para el softirq con índice n se almacena en softirq_vec[n]->action.
-7. Ejecuta local_irq_disable() para deshabilitar las interrupciones locales.
-8. Copia la máscara de bits de softirq de la CPU local en la variable local pendiente y disminuye el contador de iteraciones una vez más.
-9. Si el valor pendiente no es cero (se activó al menos un softirq desde el inicio de la última iteración) y el contador de iteraciones sigue siendo positivo, retrocede al paso 4.
-10. Si hay más softirq pendientes, invoca wakeup_softirqd() para despertar el hilo del núcleo que se encarga de los softirq para la CPU local (consulte la siguiente sección).
-11. Resta 1 del contador de softirq, habilitando así nuevamente las funciones diferibles.
+La función *__do_softirq()* ejecuta las funciones diferibles correspondientes. Mientras se ejecuta una función softirq, pueden aparecer nuevas softirq pendientes; para asegurar un tiempo de latencia bajo para las funciones diferibles, *__do_softirq()* sigue ejecutándose hasta que se hayan ejecutado todas las softirq pendientes. Sin embargo, este mecanismo podría obligar a *__do_softirq()* a ejecutarse durante largos períodos de tiempo, lo que retrasaría considerablemente los procesos del modo usuario. Por esa razón, *__do_softirq()* realiza una cantidad fija de iteraciones (10) y luego retorna. Las softirq pendientes restantes, si las hubiera, serán manejadas a su debido tiempo por el hilo del kernel *ksoftirqd* que se describe en la siguiente sección.
 
 Los hilos del kernel ksoftirqd
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -488,171 +459,23 @@ En versiones recientes del kernel, cada CPU tiene su propio hilo de kernel *ksof
         }
     }
 
-Cuando se activa, el hilo de kernel verifica la máscara de bits softirq local_softirq_pending() e invoca, si es necesario, do_softirq(). Si no hay softirqs pendientes, la función pone el proceso actual en el estado TASK_INTERRUPTIBLE e invoca entonces la función cond_resched() para realizar un cambio de proceso si lo requiere el proceso actual (indicador TIF_NEED_RESCHED del conjunto thread_info actual).
+Cuando se activa, el hilo de kernel verifica si hay tareas diferidas pendientes e invoca, si es necesario, *do_softirq()*.
 
 Los hilos de kernel ksoftirqd/n representan una solución para un problema crítico de equilibrio.
 
 Las funciones softirqs pueden reactivarse a sí mismas; de hecho, tanto los softirqs de red como los softirqs de tasklet lo hacen. Además, los eventos externos, como la inundación de paquetes en una tarjeta de red, pueden activar softirqs con una frecuencia muy alta.
 
-El potencial de un flujo continuo de alto volumen de softirqs crea un problema que se resuelve introduciendo hilos del núcleo. Sin ellos, los desarrolladores se enfrentan esencialmente a dos estrategias alternativas.
-
-La primera estrategia consiste en ignorar los nuevos softirqs que se producen mientras se ejecuta *do_softirq()*. En otras palabras, la función *do_softirq()* podría determinar qué softirqs están pendientes cuando se inicia la función y luego ejecutar sus funciones. A continuación, finalizaría sin volver a verificar los softirqs pendientes. Esta solución no es lo suficientemente buena. Supongamos que una función softirq se reactiva durante la ejecución de *do_softirq()*. En el peor de los casos, el softirq no se ejecuta nuevamente hasta la siguiente interrupción del temporizador, incluso si la máquina está inactiva. Como resultado, el tiempo de latencia de softirq es inaceptable para los desarrolladores de redes.
-
-La segunda estrategia consiste en volver a verificar continuamente los softirqs pendientes. La función *do_softirq()* podría seguir comprobando los softirqs pendientes y finalizaría sólo cuando ninguno de ellos esté pendiente. Aunque esta solución puede satisfacer a los desarrolladores de redes, ciertamente puede molestar a los usuarios normales del sistema: si una tarjeta de red recibe un flujo de paquetes de alta frecuencia o una función softirq sigue activándose, la función *do_softirq()* nunca retorna y los programas de usuario virtualmente se detienen.
-
-Los hilos del núcleo *ksoftirqd/n* intentan resolver este difícil problema de equilibrio. La función *do_softirq()* determina qué softirqs están pendientes y ejecuta sus funciones. Después de unas pocas iteraciones, si el flujo de softirqs no se detiene, la función despierta el hilo del núcleo y finaliza (paso 10 de *__do_softirq()*). El hilo del núcleo tiene baja prioridad, por lo que los programas de usuario tienen la oportunidad de ejecutarse; pero si la máquina está inactiva, los softirqs pendientes se ejecutan rápidamente.
+Los hilos del núcleo *ksoftirqd/n* intentan resolver el difícil problema de equilibrio. La función *do_softirq()* determina qué softirqs están pendientes y ejecuta sus funciones. Después de unas pocas iteraciones, si el flujo de softirqs no se detiene, la función despierta el hilo del núcleo y finaliza. El hilo del núcleo tiene baja prioridad, por lo que los programas de usuario tienen la oportunidad de ejecutarse; pero si la máquina está inactiva, los softirqs pendientes se ejecutan rápidamente.
 
 Tasklets
 ********
-Los tasklets son la forma preferida de implementar funciones diferibles en los controladores de E/S. Como ya se explicó, los tasklets se construyen sobre dos softirqs llamados HI_SOFTIRQ y TASKLET_SOFTIRQ. Se pueden asociar varios tasklets con el mismo softirq, y cada tasklet lleva su propia función. No hay una diferencia real entre los dos softirqs, excepto que *do_softirq()* ejecuta los tasklets de HI_SOFTIRQ antes que los de TASKLET_SOFTIRQ.
-
-Los tasklets y los tasklets de alta prioridad se almacenan en los vectores *tasklet_vec* y *tasklet_hi_vec*, respectivamente. Ambos incluyen elementos NR_CPUS de tipo *tasklet_head*, y cada elemento consta de un puntero a una lista de *descriptores de tasklet*. El descriptor de tasklet es una estructura de datos de tipo *tasklet_struct*, cuyos campos se muestran en la siguiente tabla.
-
-+-------------+----------------------------------------------+
-|Campo        |Descripción                                   |
-+=============+==============================================+
-|next         |Puntero al siguiente descriptor en la lista   |
-+-------------+----------------------------------------------+
-|state        |Estado de la tarea                            |
-+-------------+----------------------------------------------+
-|count        |Contador de bloqueos                          |
-+-------------+----------------------------------------------+
-|func         |Puntero a la función tasklet                  |
-+-------------+----------------------------------------------+
-|data         |Un entero largo sin signo que puede ser usado |
-|             |por la función tasklet                        |
-+-------------+----------------------------------------------+
-
-El campo *state* del descriptor de tasklet incluye dos indicadores:
-
-TASKLET_STATE_SCHED
-    Cuando se establece, esto indica que el tasklet está pendiente (se ha programado para su ejecución); también significa que el descriptor de tasklet se inserta en una de las listas de las matrices tasklet_vec y tasklet_hi_vec.
-TASKLET_STATE_RUN
-    Cuando se establece, esto indica que el tasklet se está ejecutando; en un sistema monoprocesador, este indicador no se utiliza porque no hay necesidad de verificar si un tasklet específico se está ejecutando.
-
-Supongamos que está escribiendo un controlador de dispositivo y desea utilizar un tasklet: ¿qué se debe hacer? En primer lugar, debe asignar una nueva estructura de datos *tasklet_struct* e inicializarla invocando *tasklet_init()*; esta función recibe como parámetros la dirección del descriptor de tasklet, la dirección de su función tasklet y su argumento entero opcional.
-
-El tasklet puede ser deshabilitado selectivamente invocando *tasklet_disable_nosync()* o *tasklet_disable()*. Ambas funciones incrementan el campo *count* del descriptor del tasklet, pero la última función no retorna hasta que una instancia ya en ejecución de la función tasklet haya terminado. Para volver a habilitar el tasklet, utilice *tasklet_enable()*.
-
-Para activar el tasklet, debe invocar la función *tasklet_schedule()* o la función *tasklet_hi_schedule()*, de acuerdo con la prioridad que requiera para el tasklet. Las dos funciones son muy similares; cada una de ellas realiza las siguientes acciones:
-
-1. Verifica el indicador TASKLET_STATE_SCHED; si está establecido, retorna (el tasklet ya ha sido programado).
-2. Invoca *local_irq_save* para guardar el estado del indicador IF y para deshabilitar las interrupciones locales.
-3. Agrega el descriptor de tasklet al comienzo de la lista a la que apunta *tasklet_vec[n]* o *tasklet_hi_vec[n]*, donde *n* denota el número lógico de la CPU local.
-4. Invoca *raise_softirq_irqoff()* para activar el softirq TASKLET_SOFTIRQ o el HI_SOFTIRQ (esta función es similar a *raise_softirq()*, excepto que asume que las interrupciones locales ya están deshabilitadas).
-5. Invoca *local_irq_restore* para restaurar el estado del indicador IF.
-
-Finalmente, veamos cómo se ejecuta el tasklet. Sabemos por la sección anterior que, una vez activadas, las funciones softirq son ejecutadas por la función *do_softirq()*. La función softirq asociada con el softirq HI_SOFTIRQ se llama *tasklet_hi_action()*, mientras que la función asociada con TASKLET_SOFTIRQ se llama *tasklet_action()*. Una vez más, las dos funciones son muy similares; cada uno de ellos:
-
-1. Deshabilita las interrupciones locales.
-2. Obtiene el número lógico n de la CPU local.
-3. Almacena la dirección de la lista a la que apunta tasklet_vec[n] o tasklet_hi_vec[n] en la variable local list.
-4. Coloca una dirección NULL en tasklet_vec[n] o tasklet_hi_vec[n], vaciando así la lista de descriptores de tasklet programados.
-5. Habilita las interrupciones locales.
-6. Para cada descriptor de tasklet en la lista a la que apunta list:
-
- a. En sistemas multiprocesador, verifica el indicador TASKLET_STATE_RUN del tasklet.
-
-  - Si está configurado, un tasklet del mismo tipo ya se está ejecutando en otra CPU, por lo que la función vuelve a insertar el descriptor de tarea en la lista a la que apunta tasklet_vec[n] o tasklet_hi_vec[n] y activa el softirq TASKLET_SOFTIRQ o HI_SOFTIRQ nuevamente. De esta manera, la ejecución del tasklet se pospone hasta que no haya otros tasklets del mismo tipo ejecutándose en otras CPU.
-  - De lo contrario, el tasklet no se está ejecutando en otra CPU: establece el indicador para que la función tasklet no se pueda ejecutar en otras CPU.
-
- b. Comprueba si el tasklet está deshabilitado observando el campo de recuento del descriptor del tasklet. Si el tasklet está deshabilitado, borra su indicador TASKLET_STATE_RUN y vuelve a insertar el descriptor de tarea en la lista a la que apunta *tasklet_vec[n]* o *tasklet_hi_vec[n]*; luego, la función activa el softirq TASKLET_SOFTIRQ o HI_SOFTIRQ nuevamente.
- c. Si el tasklet está habilitado, borra el indicador TASKLET_STATE_SCHED y ejecuta la función tasklet.
-
-Observe que, a menos que la función tasklet se reactive a sí misma, cada activación de tasklet activa como máximo una ejecución de la función tasklet.
+Los tasklets son la forma preferida de implementar funciones diferibles en los controladores de E/S. Como ya se explicó, los tasklets se construyen sobre dos softirqs: HI_SOFTIRQ y TASKLET_SOFTIRQ. No hay una diferencia real entre los dos softirqs, excepto que *do_softirq()* ejecuta los tasklets de HI_SOFTIRQ antes que los de TASKLET_SOFTIRQ.
 
 Work Queues
 -----------
 Las colas de trabajo se introdujeron en Linux 2.6 y reemplazan una construcción similar llamada “cola de tareas” utilizada en Linux 2.4. Permiten que las funciones del núcleo se activen (de manera muy similar a las funciones diferibles) y luego se ejecuten mediante hilos del núcleo especiales llamados *hilos de trabajo*.
 
 A pesar de sus similitudes, las funciones diferibles y las colas de trabajo son bastante diferentes. La principal diferencia es que las funciones diferibles se ejecutan en un contexto de interrupción, mientras que las funciones en colas de trabajo se ejecutan en un contexto de proceso. La ejecución en un contexto de proceso es la única forma de ejecutar funciones que pueden bloquearse (por ejemplo, funciones que necesitan acceder a algún bloque de datos en el disco) porque, como ya se observó en la sección “Ejecución anidada de controladores de excepciones e interrupciones” anteriormente en este capítulo, no se puede realizar ningún cambio de proceso en un contexto de interrupción. Ni las funciones diferibles ni las funciones en una cola de trabajo pueden acceder al espacio de direcciones del modo de usuario de un proceso. De hecho, una función diferible no puede hacer ninguna suposición sobre el proceso que se está ejecutando actualmente cuando se ejecuta. Por otro lado, una función en una cola de trabajo es ejecutada por un hilo del núcleo, por lo que no hay espacio de direcciones de modo de usuario al que acceder.
-
-Estructuras de datos de work queues
-***********************************
-
-La estructura de datos principal asociada con una cola de trabajo es un descriptor llamado *workqueue_struct*, que contiene, entre otras cosas, un vector de elementos NR_CPUS, el número máximo de CPUs en el sistema. Cada elemento es un descriptor de tipo *cpu_workqueue_struct*, cuyos campos se muestran en la siguiente tabla.
-
-+---------------------------+----------------------------------------------------------+
-| Campo                     | Descripción                                              |
-+===========================+==========================================================+
-|lock                       | Spin lock usado para proteger la estructura              |
-+---------------------------+----------------------------------------------------------+
-|remove_sequence            | Número de secuencia usado por *flush_workqueue()*        |
-+---------------------------+----------------------------------------------------------+
-|insert_sequence            | Número de secuencia usado por *flush_workqueue()*        |
-+---------------------------+----------------------------------------------------------+
-|work_list                  | Cabecera de la lista de funciones pendientes             |
-+---------------------------+----------------------------------------------------------+
-|more_work                  | Cola de espera donde los hilos trabajadores esperan      |
-|                           | dormidos por más trabajo                                 |
-+---------------------------+----------------------------------------------------------+
-|work_done                  | Cola de espera donde se encuentran inactivos los         |
-|                           | hilos que esperan a que se vacíe la cola de trabajo      |
-+---------------------------+----------------------------------------------------------+
-|wq                         | Puntero a la estructura *workqueue_struct*               |
-+---------------------------+----------------------------------------------------------+
-|thread                     | Puntero al descriptor de proceso del hilo de la          |
-|                           | estructura                                               |
-+---------------------------+----------------------------------------------------------+
-|run_depth                  | Actual profundidad de ejecución de *run_workqueue()*     |
-+---------------------------+----------------------------------------------------------+
-
-El campo *worklist* de la estructura *cpu_workqueue_struct* es la cabecera de una lista doblemente enlazada que recoge las funciones pendientes de la cola de trabajo. Cada función pendiente está representada por una estructura de datos *work_struct*, cuyos campos se muestran en la siguiente tabla.
-
-+---------------------------+----------------------------------------------------------+
-|Campo                      |Descripción                                               |
-+===========================+==========================================================+
-|pending                    |1 si la función está en lista, 0 en otro caso             |
-+---------------------------+----------------------------------------------------------+
-|entry                      |Punteros a elementos anteriores y siguientes en la        |
-|                           |lista de funciones pendientes                             |
-+---------------------------+----------------------------------------------------------+
-|func                       |Dirección de la función pendiente                         |
-+---------------------------+----------------------------------------------------------+
-|data                       |Puntero pasado como parámetro a la función pendiente      |
-+---------------------------+----------------------------------------------------------+
-|wq_data                    |Generalmente apunta al descriptor *cpu_workqueue_struct*  |
-|                           |principal                                                 |
-+---------------------------+----------------------------------------------------------+
-|timer                      |Temporizador de software utilizado para retrasar la       |
-|                           |ejecución de la función pendiente                         |
-+---------------------------+----------------------------------------------------------+
-
-Funciones de la cola de trabajo
-*******************************
-La función *create_workqueue("foo")* recibe como parámetro una cadena de caracteres y devuelve la dirección de un descriptor *workqueue_struct* para la cola de trabajo recién creada. La función también crea *n* hilos de trabajo (donde n es el número de CPUs presentes efectivamente en el sistema), nombrados según la cadena pasada a la función: *foo/0, foo/1*, y así sucesivamente. La función *create_singlethread_workqueue()* es similar, pero crea sólo un hilo de trabajo, sin importar el número de CPUs en el sistema. Para destruir una cola de trabajo, el núcleo invoca la función *destroy_workqueue()*, que recibe como parámetro un puntero a un vector *workqueue_struct*.
-
-*queue_work()* inserta una función (ya empaquetada dentro de un descriptor *work_struct*) en una cola de trabajo; recibe un puntero *wq* al descriptor *workqueue_struct* y un puntero *work* al descriptor *work_struct*. *queue_work()* esencialmente realiza los siguientes pasos:
-
-1. Verifica si la función a ser insertada ya está presente en la cola de trabajo (el campo *work->pending* es igual a 1); si es así, termina.
-2. Agrega el descriptor *work_struct* a la lista de colas de trabajo y establece *work->pending* en 1.
-3. Si un hilo de trabajo está durmiendo en la cola de espera *more_work* del descriptor *cpu_workqueue_struct* de la CPU local, la función lo despierta.
-
-La función *queue_delayed_work()* es casi idéntica a *queue_work()*, excepto que recibe un tercer parámetro que representa un retraso de tiempo en los ticks del sistema. Se utiliza para asegurar un retraso mínimo antes de la ejecución de la función pendiente. En la práctica, *queue_delayed_work()* se basa en el temporizador de software en el campo timer del descriptor *work_struct* para diferir la inserción real del descriptor *work_struct* en la lista de colas de trabajo. *cancel_delayed_work()* cancela una función de cola de trabajo previamente programada, siempre que el descriptor *work_struct* correspondiente no se haya insertado ya en la lista de colas de trabajo.
-
-Cada hilo de trabajo ejecuta continuamente un bucle dentro de la función *worker_thread()*; La mayor parte del tiempo, el hilo está durmiendo y esperando que se ponga en cola algún trabajo. Una vez despertado, el hilo de trabajo invoca la función *run_workqueue()*, que esencialmente elimina cada descriptor *work_struct* de la lista de cola de trabajo del hilo de trabajo y ejecuta la función pendiente correspondiente. Debido a que las funciones de la cola de trabajo pueden bloquearse, el hilo de trabajo puede ponerse en reposo e incluso migrarse a otra CPU cuando se reanuda.
-
-A veces, el núcleo tiene que esperar hasta que se hayan ejecutado todas las funciones pendientes en una cola de trabajo. La función *flush_workqueue()* recibe una dirección de descriptor *workqueue_struct* y bloquea el proceso de llamada hasta que finalicen todas las funciones que están pendientes en la cola de trabajo. Sin embargo, la función no espera ninguna función pendiente que se haya agregado a la cola de trabajo después de la invocación de *flush_workqueue()*; los campos remove_sequence e *insert_sequence* de cada descriptor *cpu_workqueue_struct* se utilizan para reconocer las funciones pendientes recientemente agregadas.
-
-La cola de trabajo predefinida
-******************************
-En la mayoría de los casos, crear un conjunto completo de hilos de trabajo para ejecutar una función es excesivo. Por lo tanto, el núcleo ofrece una cola de trabajo predefinida llamada *events*, que puede ser utilizada libremente por cualquier programador de núcleo. La cola de trabajo predefinida no es más que una cola de trabajo estándar que puede incluir funciones de diferentes capas del núcleo y controladores de E/S; su descriptor *workqueue_struct* se almacena en el vector *keventd_wq*. Para hacer uso de la cola de trabajo predefinida, el núcleo ofrece las funciones listadas en la siguiente tabla.
-
-+---------------------------------------+-----------------------------------------------------------+
-|Función de cola de trabajo predefinida |Función de cola de trabajo equivalente                     |
-+=======================================+===========================================================+
-|schedule_work(w)                       |queue_work(keventd_wq,w)                                   |
-+---------------------------------------+-----------------------------------------------------------+
-|schedule_delayed_work(w,d)             |queue_delayed_work(keventd_wq,w,d) (en cualquier CPU)      |
-+---------------------------------------+-----------------------------------------------------------+
-|schedule_delayed_work_on(cpu,w,d)      |queue_delayed_work(keventd_wq,w,d) (en CPU predeterminada) |
-+---------------------------------------+-----------------------------------------------------------+
-|flush_scheduled_work()                 |flush_workqueue(keventd_wq)                                |
-+---------------------------------------+-----------------------------------------------------------+
-
-La cola de trabajo predefinida ahorra recursos significativos del sistema cuando la función rara vez se invoca. Por otro lado, las funciones ejecutadas en la cola de trabajo predefinida no deberían bloquearse durante mucho tiempo: debido a que la ejecución de las funciones pendientes en la lista de la cola de trabajo se serializan en cada CPU, un retraso prolongado afecta negativamente a los demás usuarios de la cola de trabajo predefinida.
-
-Además de la cola de *events* general, encontrará algunas colas de trabajo especializadas en Linux 2.6. La más significativa es la cola de trabajo kblockd utilizada por la capa del dispositivo de bloque.
 
 Regreso de interrupciones y excepciones
 ---------------------------------------
